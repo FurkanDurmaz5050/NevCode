@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Truck, Plane, Ship, Train, Package, MapPin, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
-import { fetchShipping, type ShippingQuote, type ShippingResponse } from "../../lib/analytics";
+import { fetchShipping, type ShippingResponse } from "../../lib/analytics";
 import { loadLatestAnalysis, type MarketRow } from "../../lib/research";
+import { RouteMap, type MapPoint } from "../../components/RouteMap";
 
 const MODE_ICONS = { Hava: Plane, Kara: Truck, Deniz: Ship, Demiryolu: Train };
+const MODE_COLORS: Record<string, string> = {
+  Hava: "#ef4444",
+  Kara: "#f59e0b",
+  Demiryolu: "#10b981",
+  Deniz: "#0ea5e9",
+};
 
 export function LogisticsPage() {
   const [markets, setMarkets] = useState<MarketRow[]>([]);
@@ -46,6 +53,32 @@ export function LogisticsPage() {
     const greenest = all.sort((a, b) => a.co2_kg - b.co2_kg)[0];
     return { cheapest, greenest, count: Object.keys(results).length };
   }, [results]);
+
+  const mapPoints = useMemo(() => {
+    let origin: MapPoint = { lat: 41.0082, lng: 28.9784, label: "İstanbul (TR)", flag: "🇹🇷" };
+    const destinations: MapPoint[] = [];
+    for (const m of markets.slice(0, 6)) {
+      const r = results[m.id];
+      if (r?.to_coords) {
+        if (r.from_coords) {
+          origin = {
+            lat: r.from_coords.lat,
+            lng: r.from_coords.lng,
+            label: `${r.from_coords.city} (${r.from_country})`,
+            flag: "🇹🇷",
+          };
+        }
+        destinations.push({
+          lat: r.to_coords.lat,
+          lng: r.to_coords.lng,
+          label: `${m.country} · ${r.recommended_mode} · €${r.quotes.find((q) => q.mode === r.recommended_mode)?.cost_eur ?? "?"}`,
+          flag: m.flag ?? "🌍",
+          color: MODE_COLORS[r.recommended_mode],
+        });
+      }
+    }
+    return { origin, destinations };
+  }, [markets, results]);
 
   return (
     <div className="space-y-6">
@@ -93,6 +126,28 @@ export function LogisticsPage() {
       {markets.length === 0 && !loading && (
         <div className="rounded-2xl bg-white border border-slate-200 p-12 text-center text-slate-500">
           Önce <span className="text-emerald-600">Başla</span> sayfasından bir analiz yap.
+        </div>
+      )}
+
+      {mapPoints.destinations.length > 0 && (
+        <div className="rounded-2xl bg-white border border-slate-200 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p style={{ fontWeight: 600 }}>Rota haritası</p>
+              <p className="text-xs text-slate-500">
+                OpenStreetMap · {mapPoints.origin.label} → {mapPoints.destinations.length} pazar · renkler önerilen taşıma modunu gösterir
+              </p>
+            </div>
+            <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-500">
+              {Object.entries(MODE_COLORS).map(([mode, color]) => (
+                <span key={mode} className="flex items-center gap-1">
+                  <span className="w-3 h-1.5 rounded-full" style={{ background: color }} />
+                  {mode}
+                </span>
+              ))}
+            </div>
+          </div>
+          <RouteMap origin={mapPoints.origin} destinations={mapPoints.destinations} height={380} />
         </div>
       )}
 

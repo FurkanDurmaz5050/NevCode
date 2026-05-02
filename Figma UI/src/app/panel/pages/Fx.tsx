@@ -3,7 +3,7 @@ import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, Loader2, RefreshCw, Calculator } from "lucide-react";
 import { fetchFx, type FxPair } from "../../lib/analytics";
 
 const SYMBOLS = ["EUR", "USD", "GBP", "CHF", "JPY", "CNY"];
@@ -14,6 +14,7 @@ export function FxPage() {
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
   const [active, setActive] = useState<string>("EUR");
+  const [priceTry, setPriceTry] = useState<number>(1000);
 
   const load = async () => {
     setLoading(true);
@@ -134,6 +135,53 @@ export function FxPage() {
                     <Line dataKey="f" name="Tahmin" stroke="#10b981" strokeWidth={2} strokeDasharray="6 4" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {list.length > 0 && (
+            <div className="rounded-2xl bg-white border border-slate-200 p-5 space-y-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Calculator className="w-4 h-4 text-emerald-600" />
+                  <p style={{ fontWeight: 600 }}>Fiyat çevirici</p>
+                  <span className="text-xs text-slate-500">— TRY tutarınızı her pazarda görüntüleyin</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">₺</span>
+                  <input
+                    type="number"
+                    value={priceTry}
+                    onChange={(e) => setPriceTry(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-32 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white tabular-nums"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                {list.map((p) => {
+                  const sym = p.pair.split("/")[0];
+                  const converted = p.current > 0 ? priceTry / p.current : 0;
+                  const forecastAvg =
+                    p.forecast_7d.length > 0
+                      ? p.forecast_7d.reduce((a, b) => a + b.value, 0) / p.forecast_7d.length
+                      : p.current;
+                  const futurePrice = forecastAvg > 0 ? priceTry / forecastAvg : 0;
+                  const delta = converted > 0 ? ((futurePrice - converted) / converted) * 100 : 0;
+                  const sign = delta > 0 ? "+" : "";
+                  return (
+                    <div key={sym} className="rounded-xl border border-slate-200 p-3 bg-slate-50/40">
+                      <p className="text-[11px] text-slate-500">{sym}</p>
+                      <p className="text-lg tabular-nums" style={{ fontWeight: 600 }}>
+                        {converted.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}
+                      </p>
+                      <p className={`text-[11px] tabular-nums ${
+                        delta > 0.1 ? "text-emerald-600" : delta < -0.1 ? "text-rose-600" : "text-slate-400"
+                      }`}>
+                        7g: {sign}{delta.toFixed(2)}%
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

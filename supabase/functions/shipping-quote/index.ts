@@ -21,11 +21,54 @@ const MODE_DEFAULTS = {
   Demiryolu:   { base: 0.8, perKg: 0.9, days: 12, co2PerKgKm: 0.000028 },
 } as const;
 
-// Türkiye'den (İstanbul ~41N 29E) yaklaşık km uzaklıklar
-const DISTANCE_KM: Record<string, number> = {
-  DE: 2200, NL: 2700, GB: 2800, FR: 2500, IT: 1500, ES: 3200,
-  AE: 3500, SA: 2400, US: 8800, JP: 9000, SE: 2800,
+// Ülke başkenti / büyük şehir koordinatları (lat, lng).
+// Mesafe haversine ile hesaplanır → harita ve karbonla tutarlı.
+const COUNTRY_COORDS: Record<string, { lat: number; lng: number; city: string }> = {
+  TR: { lat: 41.0082, lng: 28.9784, city: "Istanbul" },
+  DE: { lat: 52.5200, lng: 13.4050, city: "Berlin" },
+  NL: { lat: 52.3676, lng: 4.9041,  city: "Amsterdam" },
+  GB: { lat: 51.5074, lng: -0.1278, city: "London" },
+  FR: { lat: 48.8566, lng: 2.3522,  city: "Paris" },
+  IT: { lat: 41.9028, lng: 12.4964, city: "Rome" },
+  ES: { lat: 40.4168, lng: -3.7038, city: "Madrid" },
+  SE: { lat: 59.3293, lng: 18.0686, city: "Stockholm" },
+  PL: { lat: 52.2297, lng: 21.0122, city: "Warsaw" },
+  AT: { lat: 48.2082, lng: 16.3738, city: "Vienna" },
+  CH: { lat: 47.3769, lng: 8.5417,  city: "Zurich" },
+  BE: { lat: 50.8503, lng: 4.3517,  city: "Brussels" },
+  RO: { lat: 44.4268, lng: 26.1025, city: "Bucharest" },
+  GR: { lat: 37.9838, lng: 23.7275, city: "Athens" },
+  RU: { lat: 55.7558, lng: 37.6173, city: "Moscow" },
+  AE: { lat: 25.2048, lng: 55.2708, city: "Dubai" },
+  SA: { lat: 24.7136, lng: 46.6753, city: "Riyadh" },
+  QA: { lat: 25.2854, lng: 51.5310, city: "Doha" },
+  KW: { lat: 29.3759, lng: 47.9774, city: "Kuwait City" },
+  EG: { lat: 30.0444, lng: 31.2357, city: "Cairo" },
+  IL: { lat: 32.0853, lng: 34.7818, city: "Tel Aviv" },
+  US: { lat: 40.7128, lng: -74.0060, city: "New York" },
+  CA: { lat: 43.6532, lng: -79.3832, city: "Toronto" },
+  MX: { lat: 19.4326, lng: -99.1332, city: "Mexico City" },
+  BR: { lat: -23.5505, lng: -46.6333, city: "São Paulo" },
+  JP: { lat: 35.6762, lng: 139.6503, city: "Tokyo" },
+  KR: { lat: 37.5665, lng: 126.9780, city: "Seoul" },
+  CN: { lat: 31.2304, lng: 121.4737, city: "Shanghai" },
+  IN: { lat: 28.6139, lng: 77.2090, city: "New Delhi" },
+  AU: { lat: -33.8688, lng: 151.2093, city: "Sydney" },
+  ZA: { lat: -26.2041, lng: 28.0473, city: "Johannesburg" },
 };
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
 
 Deno.serve(async (req) => {
   const opt = handleOptions(req);
@@ -37,7 +80,11 @@ Deno.serve(async (req) => {
   if (!body.to_country || !body.weight_kg) return json({ error: "to_country ve weight_kg zorunlu" }, 400);
 
   const totalKg = body.weight_kg * (body.pieces ?? 1);
-  const distKm = DISTANCE_KM[body.to_country.toUpperCase()] ?? 2500;
+  const fromCC = (body.from_country ?? "TR").toUpperCase();
+  const toCC = body.to_country.toUpperCase();
+  const fromCoord = COUNTRY_COORDS[fromCC] ?? COUNTRY_COORDS.TR;
+  const toCoord = COUNTRY_COORDS[toCC];
+  const distKm = toCoord ? haversineKm(fromCoord, toCoord) : 2500;
 
   // Shippo varsa: yalnızca Hava (DHL/UPS) için gerçek fiyat al, diğer modlar tahmini kal.
   let shippoRate: { amount: number; currency: string; provider: string; days?: number } | null = null;
@@ -79,8 +126,10 @@ Deno.serve(async (req) => {
   )[0].mode;
 
   return json({
-    from_country: body.from_country ?? "TR",
-    to_country: body.to_country.toUpperCase(),
+    from_country: fromCC,
+    to_country: toCC,
+    from_coords: fromCoord ? { lat: fromCoord.lat, lng: fromCoord.lng, city: fromCoord.city } : null,
+    to_coords: toCoord ? { lat: toCoord.lat, lng: toCoord.lng, city: toCoord.city } : null,
     weight_kg: totalKg,
     distance_km: distKm,
     quotes,

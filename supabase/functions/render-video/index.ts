@@ -122,6 +122,24 @@ Deno.serve(async (req) => {
     productImageUrl = fallbackImage;
   }
 
+  // Marka renk paleti — script.palette varsa onu kullan, yoksa kompozisyona göre fallback.
+  const fallbackPalette =
+    composition === "SocialReel"
+      ? { primary: "#8b5cf6", secondary: "#ec4899", bg1: "#0f0524", bg2: "#2d1065" }
+      : composition === "ProductHero"
+        ? { primary: "#10b981", secondary: "#14b8a6", bg1: "#0f172a", bg2: "#1e293b" }
+        : { primary: "#f59e0b", secondary: "#10b981", bg1: "#0a0f1f", bg2: "#1a1230" };
+  const palette = {
+    primary: script.palette?.primary || fallbackPalette.primary,
+    secondary: script.palette?.secondary || fallbackPalette.secondary,
+    bg1: script.palette?.bg1 || fallbackPalette.bg1,
+    bg2: script.palette?.bg2 || fallbackPalette.bg2,
+  };
+
+  const valueProps: string[] = Array.isArray(script.value_props) && script.value_props.length
+    ? script.value_props.slice(0, 4)
+    : (script.scenes ?? []).slice(0, 4).map((s: any) => s.caption ?? s.voiceover ?? "");
+
   const props = {
     composition,
     brandName: business.name || business.product_name || "Markanız",
@@ -130,11 +148,17 @@ Deno.serve(async (req) => {
     marketCountry: market.country,
     marketFlag: market.flag ?? "🌍",
     marketplaces: (market.marketplaces ?? []).slice(0, 4),
-    accentColor: composition === "SocialReel" ? "#8b5cf6" : "#10b981",
+    accentColor: palette.primary,
+    secondaryColor: palette.secondary,
+    bgFrom: palette.bg1,
+    bgTo: palette.bg2,
     language: lang.code,
     hook: script.hook,
     cta: script.cta,
-    bullets: (script.scenes ?? []).slice(0, 4).map((s: any) => s.caption ?? s.voiceover ?? ""),
+    ctaLinkText: script.cta_link_text ?? script.cta,
+    bullets: valueProps,
+    tagline: script.tagline ?? "",
+    tone: script.tone ?? "",
     scenes: script.scenes,
     duration_seconds: durationOf(composition),
   };
@@ -242,35 +266,42 @@ function durationOf(comp: string): number {
   return 30;
 }
 
-const STORYBOARD_SYSTEM = `Sen GlobalNest video stüdyosunun baş senaryo yazarısın.
-Türk KOBİ'leri için yurtdışı pazarlara özel kısa pazarlama videosu storyboard'u üretiyorsun.
-HER storyboard:
- - Tamamen seçilen pazarın diline çevrilmiş olmalı (sahnelerin caption ve voiceover alanları)
- - İşletmenin GERÇEK ürün/kategori/değer önerisine, web sitesinden çıkan başlıklara ve seçilen pazarın özelliklerine (rekabet, kargo modu, marketplace'ler, vergi, düzenlemeler) atıf yapmalı
- - Genel klişe değil, KİŞİSELLEŞTİRİLMİŞ olmalı (markanın adı, ürün adı, sektörel kanıtlar)
- - 4-6 sahneye bölünmeli, sahne süreleri toplamı duration_target ile uyumlu olmalı
+const STORYBOARD_SYSTEM = `Sen GlobalNest video stüdyosunun baş yaratıcı yönetmenisin (eski Apple + Wieden+Kennedy).
+Türk KOBİ'lerin GERÇEK ürünleri için yurtdışı pazarlara özel, sinematik ve modern kısa video storyboard'u üretirsin.
+
+KURALLAR — istisnasız uy:
+1) HER metin (hook, value_props, scenes.voiceover/caption, cta, cta_link_text, hashtags) tamamen seçilen pazarın yerel diline çevrilmiş olmalı. Türkçe veya İngilizce kelime SIZDIRMA.
+2) Hiçbir genel klişe yok ("kalite", "müşteri memnuniyeti", "en iyisi" gibi içi boş laflar yasak). Her cümle markanın adını, ürün adını, web sitesi başlıklarını, hedef pazarın spesifik marketplace/regülasyon/kargo gerçeğini SOMUT olarak işlemeli. Sayı, oran, süre, marketplace adı kullan.
+3) value_props 3-4 madde — her biri 4-7 kelime, ürünün bu pazardaki SOMUT FARKINI söyler ("6 günde Otto deposundan teslim", "CE & EU Cosmetic Reg uyumlu", "%34 marj — düşük rekabet" tarzında).
+4) Sahneler 4-6 adet; sahne süreleri toplamı brief'teki duration_seconds'e EŞİT olmalı (±1 sn).
+5) Görsel ton estetik ve modern: minimalist tipografi, geniş boşluk, 1-2 odak rengi, sinematik ışık. visual alanı 1 cümlelik prodüksiyon notu (TR) — kamera hareketi, plan tipi, ışık, doku/parça yakın çekim ipuçları.
+6) palette: ürün kategorisine ve marka kimliğine UYGUN profesyonel renk paleti üret. primary = vurgu rengi (canlı), secondary = ikincil (uyumlu), bg1 = koyu arka plan başlangıcı, bg2 = koyu arka plan bitişi (HEX, 7 karakter, # ile).
+   Örnek: kozmetik markası için warm rose/cream; tech/elektronik için cyan/indigo; gıda/organik için olive/amber; tekstil için sand/terracotta.
+7) tagline: 3-5 kelimelik, marka için kullanılabilir kalıcı slogan (hedef dilde).
 
 Sadece geçerli JSON döndür, açıklama yok. Şema:
 {
   "language_code": "DE",
   "language_name": "Almanca",
-  "hook": "İlk 3 saniye, hedef dilde, dikkat çekici 6-10 kelime",
-  "value_props": ["3 madde, hedef dilde, ürünün lokal pazarda neden farklı olduğunu söyler"],
+  "hook": "İlk 3 saniye, hedef dilde, dikkat çekici 5-9 kelime — markayı veya somut faydayı söyler",
+  "tagline": "3-5 kelimelik kalıcı slogan (hedef dilde)",
+  "value_props": ["4-7 kelime · somut iddia", "4-7 kelime · somut iddia", "4-7 kelime · somut iddia"],
   "scenes": [
     {
       "index": 1,
       "title_tr": "Türkçe sahne adı (editör notu)",
       "duration_seconds": 4,
       "voiceover": "Hedef dilde 1-2 cümle voice-over",
-      "caption": "Hedef dilde ekran alt yazısı (kısa)",
-      "visual": "Sahne için görsel/animasyon önerisi (Türkçe, prodüksiyon notu)"
+      "caption": "Hedef dilde ekran alt yazısı (max 6 kelime)",
+      "visual": "Türkçe prodüksiyon notu — plan/ışık/hareket"
     }
   ],
-  "cta": "Hedef dilde net bir CTA cümlesi",
-  "cta_link_text": "Buton üzerine yazılacak kısa metin (hedef dilde, max 3 kelime)",
+  "cta": "Hedef dilde net CTA cümlesi (1 satır)",
+  "cta_link_text": "Buton metni (hedef dilde, max 3 kelime)",
+  "palette": { "primary": "#RRGGBB", "secondary": "#RRGGBB", "bg1": "#RRGGBB", "bg2": "#RRGGBB" },
   "hashtags": ["#hedef_dilde", "#yerel_pazar", "#marka"],
-  "tone": "Bu pazara uygun ton (örn: 'minimal-professional', 'warm-storytelling', 'high-energy reels')",
-  "compliance_notes": ["Bu pazarda dikkat edilecek regülasyon/etiket notu (Türkçe, editör için)"]
+  "tone": "minimal-premium | warm-storytelling | high-energy-reel | editorial-fashion | tech-clean (uygun olanı seç)",
+  "compliance_notes": ["Bu pazarda dikkat edilecek regülasyon/etiket notu (Türkçe)"]
 }`;
 
 async function generateStoryboard(opts: {

@@ -50,6 +50,8 @@ export interface ShippingQuote {
 export interface ShippingResponse {
   from_country: string;
   to_country: string;
+  from_coords?: { lat: number; lng: number; city: string } | null;
+  to_coords?: { lat: number; lng: number; city: string } | null;
   weight_kg: number;
   distance_km: number;
   quotes: ShippingQuote[];
