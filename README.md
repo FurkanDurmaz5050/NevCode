@@ -177,3 +177,4 @@ scripts/deploy-supabase.sh
   yoksa `throw` eder — sessiz hatayı önler.
 
 Ninth commit.
+Tenth commit.
