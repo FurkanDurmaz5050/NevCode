@@ -9,9 +9,9 @@
 //      - İkisi de yoksa: status="preview" (UI storyboard'u inline gösterir, MP4 yok)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { renderMediaOnLambda } from "https://esm.sh/@remotion/lambda-client@4.0.300";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 import { getAuthUser, assertBusinessOwner } from "../_shared/auth.ts";
+import { invokeLambda } from "../_shared/aws-sigv4.ts";
 
 interface Req {
   market_id: string;
@@ -27,7 +27,9 @@ const OPENAI_FALLBACK_MODEL = "gpt-5.5";
 
 const LAMBDA_FN = Deno.env.get("REMOTION_LAMBDA_FUNCTION_NAME");
 const SERVE_URL = Deno.env.get("REMOTION_SERVE_URL");
-const AWS_REGION = Deno.env.get("AWS_REGION") ?? "eu-central-1";
+// Supabase Edge reserves AWS_*; prefer LAMBDA_AWS_REGION, fallback to legacy.
+const AWS_REGION =
+  Deno.env.get("LAMBDA_AWS_REGION") ?? Deno.env.get("AWS_REGION") ?? "eu-central-1";
 const RENDER_WEBHOOK = Deno.env.get("REMOTION_RENDER_WEBHOOK");
 const RENDER_WEBHOOK_TOKEN = Deno.env.get("REMOTION_RENDER_WEBHOOK_TOKEN");
 const RENDER_CALLBACK_SECRET = Deno.env.get("RENDER_CALLBACK_SECRET") ?? "";
@@ -108,7 +110,11 @@ Deno.serve(async (req) => {
   const candidate = body.product_image_url || scraped?.website?.ogImage || fallbackImage;
   let productImageUrl = candidate;
   try {
-    const head = await fetch(candidate, { method: "GET", redirect: "follow" });
+    let head = await fetch(candidate, { method: "HEAD", redirect: "follow" });
+    // Some CDNs reject HEAD with 405 — fall back to a tiny GET in that case.
+    if (head.status === 405 || head.status === 403) {
+      head = await fetch(candidate, { method: "GET", redirect: "follow" });
+    }
     if (!head.ok || !(head.headers.get("content-type") ?? "").startsWith("image/")) {
       productImageUrl = fallbackImage;
     }
@@ -361,26 +367,110 @@ async function triggerLambda(
   if (!LAMBDA_FN || !SERVE_URL) {
     throw new Error("REMOTION_LAMBDA_FUNCTION_NAME ve REMOTION_SERVE_URL gerekli");
   }
-  if (!Deno.env.get("AWS_ACCESS_KEY_ID") || !Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
-    throw new Error("AWS_ACCESS_KEY_ID ve AWS_SECRET_ACCESS_KEY gerekli");
-  }
 
-  const out = await renderMediaOnLambda({
-    region: AWS_REGION as any,
-    functionName: LAMBDA_FN,
+  // The deployed Lambda function name embeds its Remotion version
+  // (e.g. `remotion-render-4-0-261-...`). The function's `version` guard
+  // refuses payloads with a different value.
+  const REMOTION_VERSION =
+    Deno.env.get("REMOTION_VERSION") ?? extractVersionFromFnName(LAMBDA_FN) ?? "4.0.261";
+
+  // Wire schema for the `start` action of @remotion/lambda v4.0.261+.
+  // - `inputProps` MUST be wrapped as { type:"payload", payload:<JSON-string> }.
+  // - All optional fields are passed explicitly to satisfy the runtime
+  //   destructuring (the function reads e.g. `chromiumOptions.gl` directly).
+  const payload: Record<string, unknown> = {
+    type: "start",
+    version: REMOTION_VERSION,
     serveUrl: SERVE_URL,
     composition,
-    inputProps,
+    inputProps: { type: "payload", payload: JSON.stringify(inputProps) },
     codec: "h264",
     imageFormat: "jpeg",
-    framesPerLambda: 9999,
+    crf: null,
+    envVariables: {},
+    pixelFormat: "yuv420p",
+    proResProfile: null,
+    x264Preset: null,
+    jpegQuality: 80,
     privacy: "public",
+    colorSpace: "default",
+    logLevel: "info",
+    frameRange: null,
+    outName: null,
+    timeoutInMilliseconds: 30000,
+    chromiumOptions: {
+      ignoreCertificateErrors: false,
+      disableWebSecurity: false,
+      gl: null,
+      headless: true,
+      userAgent: null,
+      enableMultiProcessOnLinux: true,
+    },
+    scale: 1,
+    everyNthFrame: 1,
+    numberOfGifLoops: null,
+    concurrencyPerLambda: 1,
+    downloadBehavior: { type: "play-in-browser" },
+    muted: false,
+    overwrite: false,
+    audioBitrate: null,
+    videoBitrate: null,
+    encodingMaxRate: null,
+    encodingBufferSize: null,
+    audioCodec: null,
+    forceHeight: null,
+    forceWidth: null,
+    rendererFunctionName: null,
+    bucketName: null,
+    deleteAfter: null,
+    preferLossless: false,
+    forcePathStyle: false,
+    metadata: null,
+    apiKey: null,
+    storageClass: null,
+    offthreadVideoCacheSizeInBytes: null,
+    offthreadVideoThreads: null,
+    framesPerLambda: 80,
     maxRetries: 1,
-    webhook: webhookUrl
-      ? { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null }
-      : undefined,
+    region: AWS_REGION,
+  };
+  if (webhookUrl) {
+    payload.webhook = {
+      url: webhookUrl,
+      secret: RENDER_CALLBACK_SECRET || null,
+    };
+  }
+
+  const res = await invokeLambda({
+    region: AWS_REGION,
+    functionName: LAMBDA_FN,
+    payload,
+    invocationType: "RequestResponse",
   });
-  return out.renderId;
+  if (res.status >= 300) {
+    throw new Error(`lambda invoke ${res.status}: ${JSON.stringify(res.body).slice(0, 400)}`);
+  }
+  const body = res.body ?? {};
+  if (body && body.type === "error") {
+    throw new Error(`lambda error: ${body.message ?? "unknown"}`);
+  }
+  const renderId = body?.renderId ?? body?.RenderId;
+  if (!renderId) {
+    throw new Error(`lambda response missing renderId: ${JSON.stringify(body).slice(0, 400)}`);
+  }
+  return renderId as string;
+}
+
+/**
+ * Remotion Lambda functions are named like
+ *   `remotion-render-4-0-261-mem3008mb-disk2048mb-240sec`
+ * Extract `4.0.261` so the `version` field in the start payload matches.
+ */
+function extractVersionFromFnName(fn: string | undefined): string | null {
+  if (!fn) return null;
+  const m = fn.match(/remotion-render-(\d+)-(\d+)-(\d+)/);
+  if (!m) return null;
+  return `${m[1]}.${m[2]}.${m[3]}`;
 }
 
 function json(payload: unknown, status = 200) {

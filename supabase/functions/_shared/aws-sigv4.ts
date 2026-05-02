@@ -106,11 +106,22 @@ export async function invokeLambda(input: {
   payload: unknown;
   invocationType?: "RequestResponse" | "Event";
 }): Promise<{ status: number; body: any }> {
-  const accessKeyId = Deno.env.get("AWS_ACCESS_KEY_ID");
-  const secretAccessKey = Deno.env.get("AWS_SECRET_ACCESS_KEY");
-  const sessionToken = Deno.env.get("AWS_SESSION_TOKEN") ?? undefined;
+  // Supabase Edge Functions reserves the `AWS_*` prefix for the platform
+  // (and rejects `supabase secrets set AWS_*`). Renderer credentials must be
+  // stored under `LAMBDA_AWS_*`. Fall back to the legacy names for backward
+  // compatibility when the function is invoked from a non-Supabase host.
+  const accessKeyId =
+    Deno.env.get("LAMBDA_AWS_ACCESS_KEY_ID") ?? Deno.env.get("AWS_ACCESS_KEY_ID");
+  const secretAccessKey =
+    Deno.env.get("LAMBDA_AWS_SECRET_ACCESS_KEY") ?? Deno.env.get("AWS_SECRET_ACCESS_KEY");
+  const sessionToken =
+    Deno.env.get("LAMBDA_AWS_SESSION_TOKEN") ??
+    Deno.env.get("AWS_SESSION_TOKEN") ??
+    undefined;
   if (!accessKeyId || !secretAccessKey) {
-    throw new Error("AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY tanımlı değil");
+    throw new Error(
+      "LAMBDA_AWS_ACCESS_KEY_ID / LAMBDA_AWS_SECRET_ACCESS_KEY tanımlı değil",
+    );
   }
   const url =
     `https://lambda.${input.region}.amazonaws.com/2015-03-31/functions/${encodeURIComponent(input.functionName)}/invocations`;

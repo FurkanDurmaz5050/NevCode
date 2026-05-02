@@ -82,8 +82,9 @@ pnpm install && pnpm server   # http://localhost:5174
 | `TAVILY_API_KEY` | – | Web araması; yoksa atlanır |
 | `RENDER_CALLBACK_SECRET` | ✓ (Lambda) | Webhook imza doğrulaması |
 | `PUBLIC_FUNCTIONS_URL` | ✓ (Lambda) | `https://YOUR.supabase.co/functions/v1` |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | – | Lambda invoke için |
-| `AWS_REGION` | – | Default `eu-central-1` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | **Kullanma.** Supabase Edge Functions `AWS_*` prefix'ini reddeder; aşağıdaki `LAMBDA_AWS_*` isim alanını kullan. |
+| `LAMBDA_AWS_ACCESS_KEY_ID` / `LAMBDA_AWS_SECRET_ACCESS_KEY` | – | Remotion Lambda invoke için IAM credentials |
+| `LAMBDA_AWS_REGION` | – | Default `eu-central-1` |
 | `REMOTION_LAMBDA_FUNCTION_NAME` | – | `pnpm lambda:functions:deploy` çıktısı |
 | `REMOTION_SERVE_URL` | – | `pnpm lambda:sites:deploy` çıktısı |
 | `REMOTION_RENDER_WEBHOOK` | – | Lokal renderer URL'i |

@@ -85,14 +85,16 @@ Beklenen çıktı: `Done: s3://.../out.mp4`
 
 ### 5) Edge function nasıl çağırıyor?
 
-`render-video` edge fn SigV4 imzalı POST atar:
+`render-video` edge fn `_shared/aws-sigv4.ts` içindeki `invokeLambda()` ile
+SigV4 imzalı POST atar (esm.sh üzerinden `@remotion/lambda-client` import etmiyoruz —
+Deno edge runtime'da güvenilir bundle olmuyor):
 
 ```
-POST https://lambda.${AWS_REGION}.amazonaws.com/2015-03-31/functions/${FN}/invocations
+POST https://lambda.${LAMBDA_AWS_REGION}.amazonaws.com/2015-03-31/functions/${FN}/invocations
 Body: { type:"start", serveUrl, composition, inputProps, codec:"h264", framesPerLambda:80, region, privacy:"public", webhook:{url,secret} }
 ```
 
-Lambda webhook tamamlanınca `{ type:"success", outputUrl, ... }` payload'unu `render-callback`'e POST eder. Callback `?secret=...` query param'ını `RENDER_CALLBACK_SECRET` ile karşılaştırır.
+Lambda webhook tamamlanınca `{ type:"success", outputUrl, ... }` payload'unu `render-callback`'e POST eder. Callback `?secret=...` query param'ını `RENDER_CALLBACK_SECRET` ile karşılaştırır. Callback fonksiyonu mutlaka `--no-verify-jwt` ile deploy edilmeli (deploy script'i bunu otomatik yapıyor).
 
 ---
 
@@ -117,13 +119,20 @@ Lambda webhook tamamlanınca `{ type:"success", outputUrl, ... }` payload'unu `r
 
 ## Env özeti
 
+> **Önemli:** Supabase Edge Functions `AWS_*` prefix'ini platform için ayırır
+> ve `supabase secrets set AWS_*` reddedilir. Edge function'lardan Lambda'yı
+> çağırabilmek için credentials'ı `LAMBDA_AWS_*` isim alanında set et.
+> Lokal `pnpm lambda:deploy` (script kendi makinende çalışır) için standart
+> `AWS_*` env'lerini kullanmaya devam edebilirsin.
+
 | Değişken | Açıklama |
 | --- | --- |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM user |
-| `AWS_REGION` | Default `eu-central-1` |
+| `LAMBDA_AWS_ACCESS_KEY_ID` / `LAMBDA_AWS_SECRET_ACCESS_KEY` | Edge function → Lambda invoke için IAM user (Supabase secrets) |
+| `LAMBDA_AWS_REGION` | Default `eu-central-1` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | **Sadece** lokal `pnpm lambda:deploy` script'i için |
 | `REMOTION_LAMBDA_FUNCTION_NAME` | `lambda:functions:deploy` çıktısı |
 | `REMOTION_SERVE_URL` | `lambda:sites:deploy` çıktısı |
-| `RENDER_CALLBACK_SECRET` | `openssl rand -hex 16` |
+| `RENDER_CALLBACK_SECRET` | `openssl rand -hex 16` — Lambda webhook payload'unu imzalamak için |
 | `REMOTION_RENDER_WEBHOOK` | (lokal) `http://host.docker.internal:5174/render` |
 | `REMOTION_RENDER_WEBHOOK_TOKEN` | (lokal opsiyonel) Bearer |
 | `RENDER_PORT` | (lokal) Default 5174 |

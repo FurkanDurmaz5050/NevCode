@@ -1,5 +1,7 @@
-import { Phone, PhoneIncoming, PhoneOutgoing, Mic, Settings2, Languages } from "lucide-react";
+import { useState } from "react";
+import { Phone, PhoneIncoming, PhoneOutgoing, Mic, Settings2, Languages, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer, XAxis, Tooltip } from "recharts";
+import { startOutboundCall, type CallStatus } from "../../lib/voice";
 
 const ELEVENLABS_PHONE_NUMBER = "+90 (—) — — —";
 
@@ -14,6 +16,29 @@ const calls = [
 ];
 
 export function VoicePage() {
+  const [phone, setPhone] = useState("");
+  const [status, setStatus] = useState<CallStatus>("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  const dialing = status === "dialing";
+
+  const handleCall = async () => {
+    setMessage(null);
+    setStatus("dialing");
+    try {
+      const res = await startOutboundCall(phone);
+      setStatus("connected");
+      setMessage(
+        res.conversationId
+          ? `Çağrı başlatıldı. Telefonunuzu kontrol edin. (id: ${res.conversationId.slice(0, 8)}…)`
+          : "Çağrı başlatıldı. Telefonunuzu kontrol edin.",
+      );
+    } catch (err) {
+      setStatus("error");
+      setMessage((err as Error).message || "Çağrı başlatılamadı.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -60,7 +85,51 @@ export function VoicePage() {
             <div className="flex items-center gap-2"><Languages className="w-3 h-3" /> TR · EN · DE · AR · NL</div>
             <div className="flex items-center gap-2"><Mic className="w-3 h-3" /> ses kalitesi: yüksek</div>
           </div>
-          <button className="mt-4 w-full py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm">Test çağrısı</button>
+
+          <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
+            <label className="text-xs text-slate-400">Beni şu numaradan ara</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+90 555 111 22 33"
+              disabled={dialing}
+              autoComplete="tel"
+              inputMode="tel"
+              className="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400 focus:bg-white/15 disabled:opacity-60"
+            />
+            <button
+              onClick={handleCall}
+              disabled={dialing || phone.trim().length < 7}
+              className="w-full py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-white/10 disabled:text-slate-400 text-slate-900 text-sm flex items-center justify-center gap-2 transition"
+            >
+              {dialing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Aranıyor…
+                </>
+              ) : (
+                <>
+                  <Phone className="w-4 h-4" /> Beni Ara
+                </>
+              )}
+            </button>
+            {message && (
+              <div
+                className={`flex items-start gap-2 text-xs px-2.5 py-2 rounded-lg ${
+                  status === "error"
+                    ? "bg-rose-500/10 text-rose-300"
+                    : "bg-emerald-500/10 text-emerald-300"
+                }`}
+              >
+                {status === "error" ? (
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                )}
+                <span className="leading-snug break-words">{message}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
