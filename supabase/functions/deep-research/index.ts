@@ -49,6 +49,14 @@ interface MarketJSON {
   competitors: string[];
   regulations: string[];
   currency: string;
+  metrics: {
+    market_size_usd?: number;
+    cagr_pct?: number;
+    tariff_pct?: number;
+    avg_order_value_usd?: number;
+    avg_price_usd?: number;
+  };
+  sources: string[];
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -139,7 +147,7 @@ Deno.serve(async (req) => {
           send({ phase: "research", message: "Web'de pazar/rakip taraması", progress: 45 });
           const queries = buildResearchQueries(biz, scraped);
           for (const q of queries) {
-            const { results } = await tavilySearch(q, { max_results: 5, search_depth: "basic" });
+            const { results } = await tavilySearch(q, { max_results: 6, search_depth: "advanced" });
             evidenceCount += results.length;
             if (results.length) webEvidence.push(`### Sorgu: ${q}\n${formatResults(results)}`);
           }
@@ -149,15 +157,15 @@ Deno.serve(async (req) => {
           try {
             const probe = await quickProbe(biz, scraped, webEvidence);
             const probeQueries = (probe.competitors ?? [])
-              .slice(0, 4)
-              .map((c: string) => `${c} pricing reviews international expansion`)
+              .slice(0, 6)
+              .map((c: string) => `${c} pricing reviews international expansion market share`)
               .concat(
-                (probe.markets ?? []).slice(0, 3).map((m: string) =>
-                  `${biz.category ?? biz.product_name ?? "product"} demand ${m} 2026 marketplaces`
+                (probe.markets ?? []).slice(0, 5).map((m: string) =>
+                  `${biz.category ?? biz.product_name ?? "product"} demand ${m} 2026 marketplaces tariff %`
                 ),
               );
             for (const q of probeQueries) {
-              const { results } = await tavilySearch(q, { max_results: 4, search_depth: "advanced" });
+              const { results } = await tavilySearch(q, { max_results: 5, search_depth: "advanced" });
               evidenceCount += results.length;
               if (results.length) webEvidence.push(`### Derin: ${q}\n${formatResults(results)}`);
             }
@@ -220,19 +228,29 @@ async function callScrape(payload: Record<string, unknown>): Promise<ScrapedCont
 }
 
 function buildResearchQueries(biz: any, ctx: ScrapedContext): string[] {
-  const product = biz.product_name || biz.category || ctx.website?.title || "Türk markası";
-  const cat = biz.category || "ürün";
+  const product = biz.product_name || biz.category || ctx.website?.title || (biz.website ? `site:${biz.website}` : "Türk markası");
+  const cat = biz.category || product || "product";
   const brand = biz.name || product;
-  return [
+  const idea = (biz.idea || "").slice(0, 120);
+  const site = biz.website ? String(biz.website).replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+  const queries = [
+    site ? `${site} brand overview products international` : "",
+    site ? `site:${site}` : "",
     `${product} export markets Europe demand 2025 2026`,
     `${cat} marketplace fees Germany Netherlands UK 2025`,
-    `${cat} import regulations EU UAE customs duties`,
+    `${cat} import regulations EU UAE customs duties tariff %`,
     `${product} competitors international online`,
     `${brand} reviews international buyers`,
     `${cat} consumer trends 2026 Gulf Middle East`,
-    `${product} shipping cost from Turkey logistics`,
+    `${product} shipping cost from Turkey logistics per kg air sea`,
     `${cat} sustainability label requirements EU 2026`,
-  ];
+    `${cat} market size USD 2025 forecast CAGR`,
+    `${product} average price USD Amazon Otto Bol Noon`,
+    `${cat} customer LTV average order value e-commerce 2025`,
+    `${cat} top exporters Turkey 2025 statistics`,
+    idea ? `${idea} target country opportunity export Turkey` : "",
+  ].filter(Boolean) as string[];
+  return queries;
 }
 
 // İlk kaba sentez: rakip/markları çıkartıp ikinci tur arama için kullan
@@ -286,14 +304,24 @@ Sadece geçerli JSON döndür, açıklama yazma. Şema:
       "shipping_cost_per_kg": 2.4, // USD
       "carbon_kg_per_kg": 0.18,
       "tax_note": "EORI + KDV %19",
-      "rationale": "2-3 cümle Türkçe gerekçe",
+      "rationale": "3-5 cümle Türkçe gerekçe, niceliksel veri ve kaynak referansı",
       "competitors": ["Marka A", "Marka B"],
       "regulations": ["CE işareti", "Dil etiketi DE"],
-      "currency": "EUR"
+      "currency": "EUR",
+      "metrics": {
+        "market_size_usd": 1200000000,    // toplam pazar büyüklüğü USD
+        "cagr_pct": 6.4,                  // yıllık büyüme %
+        "tariff_pct": 4.5,                // gümrük vergisi %
+        "avg_order_value_usd": 48,        // ortalama sipariş USD
+        "avg_price_usd": 22                // ürün ortalama fiyat USD
+      },
+      "sources": ["https://...", "https://..."]   // web kanıtlarından 2-4 URL
     }
   ]
 }
-Türkçe yaz. fit_score'lar tutarlı ve gerekçeli olsun.`;
+Türkçe yaz. fit_score'lar tutarlı ve gerekçeli olsun. Metrics alanında yalnızca
+kanıtların desteklediği değerleri kullan; emin değilsen alanı atla. sources'da
+kullandığın web kanıtı URL'lerini liste.`;
 
 async function synthesize(
   biz: any,
@@ -302,32 +330,33 @@ async function synthesize(
 ): Promise<MarketJSON[]> {
   const userPrompt = `# İşletme
 - Ad: ${biz.name ?? "(isim yok)"}
-- Kategori: ${biz.category ?? "?"}
-- Ürün: ${biz.product_name ?? "?"}
-- Web: ${biz.website ?? "?"}
-- Instagram: @${biz.instagram ?? "?"}
-- Açıklama: ${biz.idea ?? "(yok)"}
-- Birim maliyet: ${biz.unit_cost_try ?? "?"} TRY
-- Tedarik süresi: ${biz.lead_time_days ?? "?"} gün
-- Ürün ağırlığı: ${biz.weight_kg ?? "?"} kg
+- Web URL: ${biz.website ?? "(yok)"}
+- Instagram: @${biz.instagram ?? "(yok)"}
+- Açıklama / Fikir: ${biz.idea ?? "(yok)"}
+${biz.category ? `- Kategori: ${biz.category}` : ""}
+${biz.product_name ? `- Ürün: ${biz.product_name}` : ""}
+${biz.unit_cost_try ? `- Birim maliyet: ${biz.unit_cost_try} TRY` : ""}
+${biz.lead_time_days ? `- Tedarik süresi: ${biz.lead_time_days} gün` : ""}
+${biz.weight_kg ? `- Ürün ağırlığı: ${biz.weight_kg} kg` : ""}
 
-# Web context
+# Web context (${biz.website ?? "-"})
 Title: ${scraped.website?.title ?? "-"}
 Description: ${scraped.website?.description ?? "-"}
 Başlıklar: ${scraped.website?.headings.join(" | ") ?? "-"}
 Anahtar kelimeler: ${scraped.website?.detectedKeywords.join(", ") ?? "-"}
-Metin: ${scraped.website?.textSnippet?.slice(0, 1200) ?? "-"}
+Metin: ${scraped.website?.textSnippet?.slice(0, 1500) ?? "-"}
 
 # Web sitesi alt sayfaları (about, products, vs.)
-${(scraped.website as any)?.pages?.map((p: any) => `## ${p.title ?? p.url}\n${p.snippet}`).join("\n\n").slice(0, 4000) ?? "(yok)"}
+${(scraped.website as any)?.pages?.map((p: any) => `## ${p.title ?? p.url} (${p.url})\n${p.snippet}`).join("\n\n").slice(0, 5000) ?? "(yok)"}
 
 # Instagram
 ${scraped.instagram?.handle ? `@${scraped.instagram.handle}` : "(yok)"}
 
-# Web kanıtları (özet)
-${evidence.join("\n\n").slice(0, 6000) || "(yok)"}
+# Web kanıtları (Tavily çıktıları)
+${evidence.join("\n\n").slice(0, 9000) || "(yok)"}
 
-Yukarıdaki bilgilere göre 5-8 yurtdışı pazar öner. Şemaya uy. Sadece JSON.`;
+Yukarıdaki bilgilere göre 5-8 yurtdışı pazar öner. Şemaya tam uy. metrics ve
+sources alanlarını mutlaka doldur (kanıtlardan gerçek URL'leri al). Sadece JSON.`;
 
   const tryModel = async (model: string) => {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -385,7 +414,20 @@ function sanitize(m: any): MarketJSON | null {
     competitors: Array.isArray(m.competitors) ? m.competitors.map(String).slice(0, 8) : [],
     regulations: Array.isArray(m.regulations) ? m.regulations.map(String).slice(0, 8) : [],
     currency: String(m.currency ?? "USD"),
+    metrics: {
+      market_size_usd: numOpt(m.metrics?.market_size_usd),
+      cagr_pct: numOpt(m.metrics?.cagr_pct),
+      tariff_pct: numOpt(m.metrics?.tariff_pct),
+      avg_order_value_usd: numOpt(m.metrics?.avg_order_value_usd),
+      avg_price_usd: numOpt(m.metrics?.avg_price_usd),
+    },
+    sources: Array.isArray(m.sources) ? m.sources.map(String).slice(0, 6) : [],
   };
+}
+
+function numOpt(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function clamp(n: number, min: number, max: number) {

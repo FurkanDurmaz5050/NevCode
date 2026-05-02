@@ -226,10 +226,53 @@ function MarketDrawer({ market, onClose }: { market: MarketRow; onClose: () => v
               </ul>
             </Section>
           )}
+
+          {market.metrics && Object.values(market.metrics).some((v) => v !== undefined) && (
+            <Section title="Niceliksel veriler">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {market.metrics.market_size_usd !== undefined && (
+                  <Stat label="Pazar büyüklüğü" value={`$${formatBig(market.metrics.market_size_usd)}`} />
+                )}
+                {market.metrics.cagr_pct !== undefined && (
+                  <Stat label="CAGR" value={`%${market.metrics.cagr_pct}`} />
+                )}
+                {market.metrics.tariff_pct !== undefined && (
+                  <Stat label="Gümrük" value={`%${market.metrics.tariff_pct}`} />
+                )}
+                {market.metrics.avg_order_value_usd !== undefined && (
+                  <Stat label="Ort. sipariş" value={`$${market.metrics.avg_order_value_usd}`} />
+                )}
+                {market.metrics.avg_price_usd !== undefined && (
+                  <Stat label="Ort. fiyat" value={`$${market.metrics.avg_price_usd}`} />
+                )}
+              </div>
+            </Section>
+          )}
+
+          {(market.sources ?? []).length > 0 && (
+            <Section title="Kaynaklar">
+              <ul className="space-y-1 text-xs">
+                {market.sources!.map((s) => (
+                  <li key={s} className="truncate">
+                    <a href={s} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
+                      {s}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
         </div>
       </aside>
     </div>
   );
+}
+
+function formatBig(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(n);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

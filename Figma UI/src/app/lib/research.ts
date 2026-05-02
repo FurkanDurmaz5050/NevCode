@@ -23,6 +23,14 @@ export interface MarketRow {
   competitors: string[];
   regulations: string[];
   currency: string | null;
+  metrics?: {
+    market_size_usd?: number;
+    cagr_pct?: number;
+    tariff_pct?: number;
+    avg_order_value_usd?: number;
+    avg_price_usd?: number;
+  };
+  sources?: string[];
 }
 
 export interface ResearchEvent {

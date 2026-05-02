@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
-  Sparkles, Globe, Instagram, Lightbulb, Package, Loader2, Check,
-  Film, PhoneCall, TrendingUp, Truck, Leaf, ArrowRight, AlertCircle, Weight,
+  Sparkles, Globe, Instagram, Lightbulb, Loader2, Check,
+  Film, PhoneCall, TrendingUp, Truck, Leaf, AlertCircle,
 } from "lucide-react";
 import type { BusinessInput } from "../../lib/analyzer";
 import { streamDeepResearch, upsertBusiness, type MarketRow, type ResearchEvent } from "../../lib/research";
@@ -21,8 +21,7 @@ type PhaseStatus = "pending" | "running" | "done";
 
 export function StartPage({ onGoTo, onAnalyzed }: { onGoTo: (p: string) => void; onAnalyzed?: () => void | Promise<void> }) {
   const [form, setForm] = useState<BusinessInput>({
-    website: "", instagram: "", idea: "", category: "Kozmetik",
-    productName: "", unitCostTRY: 120, leadTimeDays: 7, weightKg: 1,
+    website: "", instagram: "", idea: "",
   });
   const [phaseStatus, setPhaseStatus] = useState<Record<PhaseKey, PhaseStatus>>({
     init: "pending", scrape: "pending", research: "pending",
@@ -100,44 +99,6 @@ export function StartPage({ onGoTo, onAnalyzed }: { onGoTo: (p: string) => void;
             placeholder="Ne satıyorsun, kime hitap ediyor?"
             className="w-full bg-transparent outline-none text-sm resize-none" />
         </Field>
-
-        <div className="grid md:grid-cols-4 gap-4">
-          <Field icon={Package} label="Ürün adı">
-            <input value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })}
-              placeholder="Gül suyu" className="w-full bg-transparent outline-none text-sm" />
-          </Field>
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">Birim maliyet (₺)</label>
-            <input type="number" value={form.unitCostTRY} onChange={(e) => setForm({ ...form, unitCostTRY: +e.target.value })}
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 outline-none text-sm" />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 mb-1.5 block">Tedarik süresi (gün)</label>
-            <input type="number" value={form.leadTimeDays} onChange={(e) => setForm({ ...form, leadTimeDays: +e.target.value })}
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 outline-none text-sm" />
-          </div>
-          <Field icon={Weight} label="Ürün ağırlığı (kg)">
-            <input type="number" step="0.1" value={form.weightKg}
-              onChange={(e) => setForm({ ...form, weightKg: +e.target.value })}
-              className="w-full bg-transparent outline-none text-sm" />
-          </Field>
-        </div>
-
-        <div>
-          <label className="text-xs text-slate-500 mb-1.5 block">Kategori</label>
-          <div className="flex flex-wrap gap-1.5">
-            {["Kozmetik", "Tekstil", "Gıda", "El yapımı", "Elektronik", "Ev & Yaşam"].map((c) => (
-              <button key={c} type="button" onClick={() => setForm({ ...form, category: c })}
-                className={`px-3 py-1.5 rounded-full text-xs border transition ${
-                  form.category === c
-                    ? "bg-slate-900 text-white border-slate-900"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                }`}>
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <button onClick={runAll} disabled={running}
           className="w-full py-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center gap-2 hover:opacity-95 transition disabled:opacity-60"

@@ -1,25 +1,23 @@
 // OpenAI istemcisi — artık doğrudan OpenAI'a değil, Supabase Edge Function
 // proxy'sine (`openai-chat`) istek atar. API key sadece sunucuda yaşar.
 
-import { ANON_KEY, FUNCTIONS_URL } from "./supabase";
+import { ANON_KEY, FUNCTIONS_URL, getFunctionAuthHeader } from "./supabase";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 const ENDPOINT = `${FUNCTIONS_URL}/openai-chat`;
 
-function authHeaders(): Record<string, string> {
+async function authHeaders(): Promise<Record<string, string>> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (ANON_KEY) {
-    h["Authorization"] = `Bearer ${ANON_KEY}`;
-    h["apikey"] = ANON_KEY;
-  }
+  h["Authorization"] = await getFunctionAuthHeader();
+  if (ANON_KEY) h["apikey"] = ANON_KEY;
   return h;
 }
 
 export async function chat(messages: ChatMessage[], model = "gpt-5.5"): Promise<string> {
   const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ messages, model, stream: false }),
   });
   if (!res.ok) {
@@ -33,7 +31,7 @@ export async function chat(messages: ChatMessage[], model = "gpt-5.5"): Promise<
 export async function* chatStream(messages: ChatMessage[], model = "gpt-5.5") {
   const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ messages, model, stream: true }),
   });
   if (!res.ok || !res.body) {

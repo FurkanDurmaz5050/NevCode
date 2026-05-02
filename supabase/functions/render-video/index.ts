@@ -369,7 +369,7 @@ async function triggerLambda(
     inputProps,
     codec: "h264",
     imageFormat: "jpeg",
-    framesPerLambda: 80,
+    framesPerLambda: 9999,
     region: AWS_REGION,
     privacy: "public",
     webhook: { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null },

@@ -49,12 +49,25 @@ export function ResearchAgentPage() {
       const ctx = [
         RESEARCH_SYSTEM_PROMPT,
         biz.business
-          ? `\n=== AKTİF İŞLETME ===\nMarka: ${biz.business.name ?? "-"}\nÜrün: ${biz.business.product_name ?? "-"} (${biz.business.category ?? "-"})\nWeb: ${biz.business.website ?? "-"}\nBirim maliyet: ${biz.business.unit_cost_try ?? "-"} TRY · Tedarik: ${biz.business.lead_time_days ?? "-"} gün · Ağırlık: ${biz.business.weight_kg ?? "-"} kg`
+          ? `\n=== AKTİF İŞLETME ===\nMarka: ${biz.business.name ?? "-"}\nÜrün: ${biz.business.product_name ?? "-"} (${biz.business.category ?? "-"})\nWeb sitesi (BU URL'İ İNCELE): ${biz.business.website ?? "-"}\nInstagram: @${biz.business.instagram ?? "-"}\nFikir / açıklama: ${biz.business.idea ?? "-"}\nBirim maliyet: ${biz.business.unit_cost_try ?? "-"} TRY · Tedarik: ${biz.business.lead_time_days ?? "-"} gün · Ağırlık: ${biz.business.weight_kg ?? "-"} kg`
           : "",
         ms.length
-          ? `\n=== SON ANALİZ — ÖNERİLEN PAZARLAR ===\n${ms.slice(0, 8).map((m) => `- ${m.flag ?? ""} ${m.country} (uyum ${m.fit_score}, marj ~%${m.avg_margin ?? "?"}, marketplaces: ${m.marketplaces.join(", ")}; rakipler: ${m.competitors.slice(0, 3).join(", ")})`).join("\n")}`
+          ? `\n=== SON ANALİZ — ÖNERİLEN PAZARLAR ===\n${ms
+              .slice(0, 8)
+              .map((m) => {
+                const met = m.metrics ?? {};
+                const metStr = [
+                  met.market_size_usd ? `pazar $${(met.market_size_usd / 1e6).toFixed(0)}M` : "",
+                  met.cagr_pct ? `CAGR %${met.cagr_pct}` : "",
+                  met.tariff_pct ? `tarife %${met.tariff_pct}` : "",
+                  met.avg_order_value_usd ? `AOV $${met.avg_order_value_usd}` : "",
+                ].filter(Boolean).join(", ");
+                const src = (m.sources ?? []).slice(0, 2).join(" | ");
+                return `- ${m.flag ?? ""} ${m.country} (uyum ${m.fit_score}, marj ~%${m.avg_margin ?? "?"}, ${metStr}; marketplaces: ${m.marketplaces.join(", ")}; rakipler: ${m.competitors.slice(0, 3).join(", ")}${src ? `; kaynak: ${src}` : ""})`;
+              })
+              .join("\n")}`
           : "",
-        "\nKullanıcı sorularını bu bağlam ışığında, somut ve eyleme dönük cevapla. Web arama sonuçları sağlandığında bunlara başvur ve [1], [2] gibi atıf yap.",
+        "\nKullanıcı sorularını bu bağlam ışığında, somut, niceliksel ve eyleme dönük cevapla. İşletmenin web sitesi URL'sini referans göstererek konuş. Web arama sonuçları sağlandığında bunlara başvur ve [1], [2] gibi atıf yap.",
       ].filter(Boolean).join("");
       setSystemPrompt(ctx);
     })();
