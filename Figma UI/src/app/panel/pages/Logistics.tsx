@@ -1,107 +1,160 @@
-import { Truck, Plane, Ship, Train, Package, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Truck, Plane, Ship, Train, Package, MapPin, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { fetchShipping, type ShippingQuote, type ShippingResponse } from "../../lib/analytics";
+import { loadLatestAnalysis, type MarketRow } from "../../lib/research";
 
-const routes = [
-  { from: "İstanbul", to: "Hamburg", mode: "Deniz", days: 14, cost: "€0.41/kg", co2: "0.02 kg", icon: Ship, recommended: true },
-  { from: "İstanbul", to: "Rotterdam", mode: "Deniz", days: 12, cost: "€0.45/kg", co2: "0.02 kg", icon: Ship },
-  { from: "İstanbul", to: "Berlin", mode: "Kara", days: 6, cost: "€2.40/kg", co2: "0.18 kg", icon: Truck },
-  { from: "İstanbul", to: "Dubai", mode: "Hava", days: 3, cost: "€4.80/kg", co2: "0.82 kg", icon: Plane },
-  { from: "İstanbul", to: "Stockholm", mode: "Demiryolu", days: 12, cost: "€0.90/kg", co2: "0.04 kg", icon: Train },
-];
-
-const shipments = [
-  { id: "SH-3201", route: "İST → HAM", carrier: "Maersk", weight: "240 kg", eta: "8 May", status: "Yolda", progress: 62 },
-  { id: "SH-3200", route: "İST → DXB", carrier: "Turkish Cargo", weight: "45 kg", eta: "4 May", status: "Gümrükte", progress: 88 },
-  { id: "SH-3199", route: "İST → AMS", carrier: "DHL", weight: "120 kg", eta: "5 May", status: "Yolda", progress: 71 },
-  { id: "SH-3198", route: "İST → LHR", carrier: "DSV", weight: "78 kg", eta: "Teslim ✓", status: "Teslim edildi", progress: 100 },
-];
+const MODE_ICONS = { Hava: Plane, Kara: Truck, Deniz: Ship, Demiryolu: Train };
 
 export function LogisticsPage() {
+  const [markets, setMarkets] = useState<MarketRow[]>([]);
+  const [weight, setWeight] = useState(50);
+  const [results, setResults] = useState<Record<string, ShippingResponse>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const latest = await loadLatestAnalysis();
+      const ms = latest?.markets ?? [];
+      setMarkets(ms);
+      const top = ms.slice(0, 6);
+      const out: Record<string, ShippingResponse> = {};
+      await Promise.all(top.map(async (m) => {
+        if (!m.country_code) return;
+        try {
+          out[m.id] = await fetchShipping({
+            to_country: m.country_code,
+            weight_kg: weight,
+          });
+        } catch { /* skip */ }
+      }));
+      setResults(out);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [weight]);
+
+  const stats = useMemo(() => {
+    const all = Object.values(results).flatMap((r) => r.quotes);
+    const cheapest = all.sort((a, b) => a.cost_eur - b.cost_eur)[0];
+    const greenest = all.sort((a, b) => a.co2_kg - b.co2_kg)[0];
+    return { cheapest, greenest, count: Object.keys(results).length };
+  }, [results]);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl tracking-tight" style={{ fontWeight: 600 }}>Lojistik</h1>
-        <p className="text-sm text-slate-500 mt-1">Rota optimizasyonu · taşıyıcı entegrasyonu · gümrük</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl tracking-tight" style={{ fontWeight: 600 }}>Lojistik</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Pazarlarınız için gerçek zamanlı taşıma teklifleri (Shippo + tahmin)
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500">Kg</label>
+          <input
+            type="number"
+            value={weight}
+            onChange={(e) => setWeight(Math.max(1, Number(e.target.value) || 1))}
+            className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+          />
+          <button
+            onClick={load}
+            disabled={loading}
+            className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm flex items-center gap-1.5 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Yenile
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" /> {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat icon={Package} label="Aktif sevkiyat" value="14" />
-        <Stat icon={Ship} label="Bu ay teslim" value="62" />
-        <Stat icon={MapPin} label="Anlaşmalı taşıyıcı" value="9" />
-        <Stat icon={Truck} label="Ortalama teslim" value="9.2 gün" />
+        <Stat icon={MapPin} label="Hedef pazar" value={String(stats.count)} />
+        <Stat icon={Package} label="Test ağırlığı" value={`${weight} kg`} />
+        <Stat icon={Truck} label="En ucuz mod" value={stats.cheapest?.mode ?? "—"}
+              sub={stats.cheapest ? `€${stats.cheapest.cost_eur}` : undefined} />
+        <Stat icon={Ship} label="En yeşil mod" value={stats.greenest?.mode ?? "—"}
+              sub={stats.greenest ? `${stats.greenest.co2_kg} kg CO₂` : undefined} />
       </div>
 
-      <div className="rounded-2xl bg-white border border-slate-200">
-        <div className="px-5 py-4 border-b border-slate-200">
-          <p style={{ fontWeight: 600 }}>Önerilen rotalar</p>
-          <p className="text-xs text-slate-500">Maliyet, süre ve karbon optimize edilmiş seçenekler</p>
+      {markets.length === 0 && !loading && (
+        <div className="rounded-2xl bg-white border border-slate-200 p-12 text-center text-slate-500">
+          Önce <span className="text-emerald-600">Başla</span> sayfasından bir analiz yap.
         </div>
-        <div className="divide-y divide-slate-100">
-          {routes.map((r, i) => (
-            <div key={i} className="px-5 py-4 flex items-center gap-4 hover:bg-slate-50/60">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                r.recommended ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-600"
-              }`}>
-                <r.icon className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
+      )}
+
+      <div className="space-y-3">
+        {markets.slice(0, 6).map((m) => {
+          const r = results[m.id];
+          return (
+            <div key={m.id} className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm" style={{ fontWeight: 500 }}>{r.from} → {r.to}</p>
-                  {r.recommended && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Önerilen</span>}
+                  <span className="text-lg">{m.flag ?? "🌍"}</span>
+                  <p style={{ fontWeight: 600 }}>{m.country}</p>
+                  <span className="text-xs text-slate-500">{m.country_code}</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">{r.mode} · {r.days} gün</p>
+                {r && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                    Önerilen: {r.recommended_mode}
+                  </span>
+                )}
               </div>
-              <div className="text-right">
-                <p className="text-sm tabular-nums" style={{ fontWeight: 500 }}>{r.cost}</p>
-                <p className="text-xs text-slate-500">{r.co2} CO₂/kg</p>
-              </div>
-              <button className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs">Seç</button>
+              {r ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100">
+                  {r.quotes.map((q) => {
+                    const Icon = MODE_ICONS[q.mode];
+                    const isBest = q.mode === r.recommended_mode;
+                    return (
+                      <div key={q.mode} className={`p-4 ${isBest ? "bg-emerald-50/40" : ""}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Icon className="w-4 h-4 text-slate-600" />
+                          <span className="text-sm" style={{ fontWeight: 500 }}>{q.mode}</span>
+                          <span className="text-xs text-slate-400 ml-auto">{q.transit_days}g</span>
+                        </div>
+                        <p className="text-lg tabular-nums" style={{ fontWeight: 600 }}>€{q.cost_eur}</p>
+                        <p className="text-xs text-slate-500">{q.cost_per_kg} €/kg · {q.co2_kg} kg CO₂</p>
+                        <p className="text-[11px] text-slate-400 mt-1 truncate">{q.provider}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-6 text-sm text-slate-400 flex items-center gap-2">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Veri çekiliyor…
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-white border border-slate-200">
-        <div className="px-5 py-4 border-b border-slate-200">
-          <p style={{ fontWeight: 600 }}>Aktif sevkiyatlar</p>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {shipments.map((s) => (
-            <div key={s.id} className="px-5 py-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <p className="text-sm tabular-nums text-slate-600">{s.id}</p>
-                  <p className="text-sm" style={{ fontWeight: 500 }}>{s.route}</p>
-                  <span className="text-xs text-slate-500">· {s.carrier} · {s.weight}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-500">ETA {s.eta}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    s.status === "Teslim edildi" ? "bg-emerald-50 text-emerald-700" :
-                    s.status === "Gümrükte" ? "bg-amber-50 text-amber-700" :
-                    "bg-sky-50 text-sky-700"
-                  }`}>{s.status}</span>
-                </div>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className={`h-full ${s.progress === 100 ? "bg-emerald-500" : "bg-sky-500"}`} style={{ width: `${s.progress}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function Stat({ icon: Icon, label, value }: any) {
+function Stat({ icon: Icon, label, value, sub }: any) {
   return (
     <div className="rounded-2xl bg-white border border-slate-200 p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+      <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
         <Icon className="w-4 h-4" />
       </div>
       <div>
         <p className="text-xs text-slate-500">{label}</p>
         <p className="text-xl tracking-tight" style={{ fontWeight: 600 }}>{value}</p>
+        {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
       </div>
     </div>
   );

@@ -1,34 +1,45 @@
-// OpenAI istemcisi — anahtar .env.local içinden okunur (VITE_OPENAI_API_KEY).
-// Üretimde mutlaka backend proxy kullanın; tarayıcıdan key sızdırmayın.
+// OpenAI istemcisi — artık doğrudan OpenAI'a değil, Supabase Edge Function
+// proxy'sine (`openai-chat`) istek atar. API key sadece sunucuda yaşar.
 
-const API_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-const BASE_URL = "https://api.openai.com/v1";
+import { ANON_KEY, FUNCTIONS_URL } from "./supabase";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+const ENDPOINT = `${FUNCTIONS_URL}/openai-chat`;
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (ANON_KEY) {
+    h["Authorization"] = `Bearer ${ANON_KEY}`;
+    h["apikey"] = ANON_KEY;
+  }
+  return h;
+}
+
 export async function chat(messages: ChatMessage[], model = "gpt-4o-mini"): Promise<string> {
-  if (!API_KEY) throw new Error("VITE_OPENAI_API_KEY .env.local içinde tanımlı değil");
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ model, messages, temperature: 0.7 }),
+    headers: authHeaders(),
+    body: JSON.stringify({ messages, model, stream: false }),
   });
-  if (!res.ok) throw new Error(`OpenAI hata: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`openai-chat ${res.status}: ${text}`);
+  }
   const json = await res.json();
-  return json.choices?.[0]?.message?.content ?? "";
+  return json.content ?? "";
 }
 
 export async function* chatStream(messages: ChatMessage[], model = "gpt-4o-mini") {
-  if (!API_KEY) throw new Error("VITE_OPENAI_API_KEY tanımlı değil");
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
-    body: JSON.stringify({ model, messages, stream: true, temperature: 0.7 }),
+    headers: authHeaders(),
+    body: JSON.stringify({ messages, model, stream: true }),
   });
-  if (!res.ok || !res.body) throw new Error(`OpenAI hata: ${res.status}`);
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`openai-chat ${res.status}: ${text}`);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -44,10 +55,12 @@ export async function* chatStream(messages: ChatMessage[], model = "gpt-4o-mini"
       const data = trimmed.slice(5).trim();
       if (data === "[DONE]") return;
       try {
-        const json = JSON.parse(data);
-        const delta = json.choices?.[0]?.delta?.content;
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
         if (delta) yield delta as string;
-      } catch {}
+      } catch {
+        // OpenAI bazen yarım chunk gönderebilir; sessizce atla.
+      }
     }
   }
 }

@@ -1,0 +1,26 @@
+{
+  "name": "@globalnest/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render:hero": "remotion render src/index.ts ProductHero out/hero.mp4 --props=src/props/sample-hero.json",
+    "render:spotlight": "remotion render src/index.ts MarketSpotlight out/spotlight.mp4 --props=src/props/sample-spotlight.json",
+    "render:reel": "remotion render src/index.ts SocialReel out/reel.mp4 --props=src/props/sample-reel.json",
+    "lambda:deploy": "remotion lambda functions deploy && remotion lambda sites create src/index.ts --site-name=globalnest"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.220",
+    "@remotion/cli": "4.0.220",
+    "@remotion/lambda": "4.0.220",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.220"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "typescript": "5.6.3"
+  }
+}

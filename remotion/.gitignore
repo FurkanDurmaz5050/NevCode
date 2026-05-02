@@ -1,0 +1,5 @@
+# Remotion config — Lambda deploy için kullanılır.
+node_modules/
+out/
+.remotion/
+.DS_Store

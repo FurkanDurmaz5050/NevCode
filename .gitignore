@@ -13,3 +13,7 @@ dist/
 supabase/.branches/
 supabase/.temp/
 supabase/.env
+
+# secrets
+supabase/functions/.env
+Figma UI/.env.local

@@ -6,6 +6,7 @@ export type BusinessInput = {
   productName?: string;
   unitCostTRY?: number;
   leadTimeDays?: number;
+  weightKg?: number;
 };
 
 export type MarketRecommendation = {

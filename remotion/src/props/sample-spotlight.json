@@ -1,0 +1,17 @@
+{
+  "brandName": "Bahçe Gül",
+  "productName": "Organik Gül Suyu",
+  "marketCountry": "Almanya",
+  "marketFlag": "🇩🇪",
+  "marketplaces": ["Otto", "Amazon.de", "Kaufland"],
+  "hook": "Almanya pazarı sizi bekliyor.",
+  "bullets": [
+    "EORI hazırlığı 3 günde",
+    "Yerel kargo 6 gün",
+    "Marj %34 — düşük rekabet",
+    "EU CE etiketi ile satışa hazır"
+  ],
+  "cta": "Otto'da yayına al",
+  "language": "DE",
+  "accentColor": "#10b981"
+}
