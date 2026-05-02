@@ -42,8 +42,8 @@ FUNCTIONS=(
 )
 for fn in "${FUNCTIONS[@]}"; do
   echo "  · $fn"
-  if [[ "$fn" == "render-callback" || "$fn" == "health" ]]; then
-    # Webhook + healthcheck JWT istemez
+  if [[ "$fn" == "render-callback" || "$fn" == "health" || "$fn" == "scrape-context" ]]; then
+    # Webhook + healthcheck + internal fetch JWT istemez
     supabase functions deploy "$fn" --no-verify-jwt
   else
     supabase functions deploy "$fn"

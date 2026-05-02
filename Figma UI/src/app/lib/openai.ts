@@ -16,7 +16,7 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
-export async function chat(messages: ChatMessage[], model = "gpt-4o-mini"): Promise<string> {
+export async function chat(messages: ChatMessage[], model = "gpt-5.5"): Promise<string> {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: authHeaders(),
@@ -30,7 +30,7 @@ export async function chat(messages: ChatMessage[], model = "gpt-4o-mini"): Prom
   return json.content ?? "";
 }
 
-export async function* chatStream(messages: ChatMessage[], model = "gpt-4o-mini") {
+export async function* chatStream(messages: ChatMessage[], model = "gpt-5.5") {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: authHeaders(),

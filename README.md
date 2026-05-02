@@ -76,7 +76,7 @@ pnpm install && pnpm server   # http://localhost:5174
 
 | Değişken | Zorunlu mu? | Açıklama |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | ✓ | gpt-5.5 / gpt-4o-mini |
+| `OPENAI_API_KEY` | ✓ | gpt-5.5 |
 | `OPENAI_MODEL` | – | Default `gpt-5.5` |
 | `GEMINI_API_KEY` | ✓ (post görseli) | `gemini-2.5-flash-image` |
 | `TAVILY_API_KEY` | – | Web araması; yoksa atlanır |

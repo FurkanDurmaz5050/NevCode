@@ -23,7 +23,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.5";
-const OPENAI_FALLBACK_MODEL = "gpt-4o-mini";
+const OPENAI_FALLBACK_MODEL = "gpt-5.5";
 
 const LAMBDA_FN = Deno.env.get("REMOTION_LAMBDA_FUNCTION_NAME");
 const SERVE_URL = Deno.env.get("REMOTION_SERVE_URL");

@@ -3,7 +3,7 @@
 //   1) businesses kaydı al (business_id ile)
 //   2) Web/Instagram context'i scrape et (scrape-context çağırır)
 //   3) Tavily web search ile sektör/rakip/regülasyon araması (opsiyonel: TAVILY_API_KEY yoksa atla)
-//   4) OpenAI gpt-4o-mini ile sentez → strict JSON (pazar listesi + rationale)
+//   4) OpenAI gpt-5.5 ile sentez → strict JSON (pazar listesi + rationale)
 //   5) markets satırlarını yaz, analyses.status = done
 // SSE event'leri yayınlar: {phase, message, progress, payload?}
 //
@@ -55,7 +55,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.5";
-const OPENAI_FALLBACK_MODEL = "gpt-4o-mini";
+const OPENAI_FALLBACK_MODEL = "gpt-5.5";
 
 Deno.serve(async (req) => {
   const opt = handleOptions(req);

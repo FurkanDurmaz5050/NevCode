@@ -9,7 +9,7 @@ Deno.serve((req) => {
   if (opt) return opt;
   const out = {
     openai: !!Deno.env.get("OPENAI_API_KEY"),
-    openai_model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+    openai_model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.5",
     tavily: !!Deno.env.get("TAVILY_API_KEY"),
     gemini: !!Deno.env.get("GEMINI_API_KEY"),
     gemini_image_model: Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image",

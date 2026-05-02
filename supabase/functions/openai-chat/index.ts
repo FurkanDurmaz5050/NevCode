@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: body.model ?? "gpt-4o-mini",
+      model: body.model ?? "gpt-5.5",
       messages: body.messages,
       temperature: body.temperature ?? 0.7,
       stream: !!body.stream,
