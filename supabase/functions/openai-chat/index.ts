@@ -49,7 +49,10 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       model: body.model ?? "gpt-5.5",
       messages: body.messages,
-      temperature: body.temperature ?? 0.7,
+      // gpt-5.x sadece default temperature destekliyor; sadece eski modellerde override gönder
+      ...(body.temperature !== undefined && !(body.model ?? "gpt-5.5").startsWith("gpt-5")
+        ? { temperature: body.temperature }
+        : {}),
       stream: !!body.stream,
     }),
   });
