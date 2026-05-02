@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Sparkles, Globe, Instagram, Lightbulb, Loader2, Check,
-  Film, PhoneCall, TrendingUp, Truck, Leaf, AlertCircle,
+  Film, PhoneCall, TrendingUp, Truck, Leaf, AlertCircle, ArrowRight,
 } from "lucide-react";
 import type { BusinessInput } from "../../lib/analyzer";
 import { streamDeepResearch, upsertBusiness, type MarketRow, type ResearchEvent } from "../../lib/research";
