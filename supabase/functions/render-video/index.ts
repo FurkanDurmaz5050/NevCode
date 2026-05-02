@@ -362,20 +362,54 @@ async function triggerLambda(
     throw new Error("REMOTION_LAMBDA_FUNCTION_NAME ve REMOTION_SERVE_URL gerekli");
   }
 
+  const serializedPayload = JSON.stringify(inputProps);
+  // Remotion v4: inputProps must be SerializedInputProps. Inline JSON up to ~200KB.
+  const serializedInputProps = { type: "payload" as const, payload: serializedPayload };
+
   const payload = {
-    type: "start",
+    type: "start" as const,
     serveUrl: SERVE_URL,
     composition,
-    inputProps,
-    codec: "h264",
-    imageFormat: "jpeg",
     framesPerLambda: 9999,
-    region: AWS_REGION,
-    privacy: "public",
-    webhook: { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null },
+    inputProps: serializedInputProps,
+    codec: "h264" as const,
+    imageFormat: "jpeg" as const,
+    crf: null,
+    envVariables: {} as Record<string, string>,
+    pixelFormat: null,
+    proResProfile: null,
+    x264Preset: null,
+    jpegQuality: 80,
+    maxRetries: 1,
+    privacy: "public" as const,
+    logLevel: "info" as const,
+    frameRange: null,
+    outName: null,
+    timeoutInMilliseconds: 240000,
+    chromiumOptions: {} as Record<string, unknown>,
+    scale: 1,
+    everyNthFrame: 1,
+    numberOfGifLoops: null,
+    concurrencyPerLambda: 1,
+    downloadBehavior: { type: "play-in-browser" as const },
+    muted: false,
+    overwrite: true,
+    audioBitrate: null,
+    videoBitrate: null,
+    encodingMaxRate: null,
+    encodingBufferSize: null,
+    audioCodec: null,
+    forceHeight: null,
+    forceWidth: null,
+    rendererFunctionName: null,
+    bucketName: null,
+    forceBucketName: null,
+    metadata: null,
+    offthreadVideoCacheSizeInBytes: null,
+    versionOnLambda: "4.0.220",
+    webhook: webhookUrl ? { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null } : null,
   };
 
-  // Tercih 1: AWS Lambda Invoke API (SigV4) — sadece IAM key gerekir.
   if (Deno.env.get("AWS_ACCESS_KEY_ID") && Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
     const out = await invokeLambda({
       region: AWS_REGION,
@@ -384,12 +418,14 @@ async function triggerLambda(
       invocationType: "RequestResponse",
     });
     if (out.status >= 300) {
-      throw new Error(`lambda invoke ${out.status}: ${JSON.stringify(out.body).slice(0, 200)}`);
+      throw new Error(`lambda invoke ${out.status}: ${JSON.stringify(out.body).slice(0, 400)}`);
+    }
+    if (out.body?.errorType || out.body?.errorMessage) {
+      throw new Error(`lambda error: ${out.body?.errorType ?? ""} ${out.body?.errorMessage ?? ""}`.slice(0, 400));
     }
     return out.body?.renderId ?? out.body?.bucketName ?? "lambda";
   }
 
-  // Tercih 2: Public Function URL (auth: NONE)
   const invokeUrl = Deno.env.get("REMOTION_LAMBDA_INVOKE_URL");
   if (!invokeUrl) {
     throw new Error(
