@@ -27,10 +27,13 @@ export function VideosPage() {
 
   const refresh = async () => {
     try {
-      const [vs, latest] = await Promise.all([loadVideos(), loadLatestAnalysis()]);
-      setVideos(vs);
-      setMarkets(latest?.markets ?? []);
-      setError(null);
+      const [vsR, latestR] = await Promise.allSettled([loadVideos(), loadLatestAnalysis()]);
+      const errs: string[] = [];
+      if (vsR.status === "fulfilled") setVideos(vsR.value);
+      else errs.push(`videolar: ${vsR.reason instanceof Error ? vsR.reason.message : String(vsR.reason)}`);
+      if (latestR.status === "fulfilled") setMarkets(latestR.value?.markets ?? []);
+      else errs.push(`analiz: ${latestR.reason instanceof Error ? latestR.reason.message : String(latestR.reason)}`);
+      setError(errs.length ? errs.join(" · ") : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
