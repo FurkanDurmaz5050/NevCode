@@ -9,8 +9,8 @@
 //      - İkisi de yoksa: status="preview" (UI storyboard'u inline gösterir, MP4 yok)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { renderMediaOnLambda } from "https://esm.sh/@remotion/lambda-client@4.0.300";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-import { invokeLambda } from "../_shared/aws-sigv4.ts";
 import { getAuthUser, assertBusinessOwner } from "../_shared/auth.ts";
 
 interface Req {
@@ -361,85 +361,26 @@ async function triggerLambda(
   if (!LAMBDA_FN || !SERVE_URL) {
     throw new Error("REMOTION_LAMBDA_FUNCTION_NAME ve REMOTION_SERVE_URL gerekli");
   }
+  if (!Deno.env.get("AWS_ACCESS_KEY_ID") || !Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
+    throw new Error("AWS_ACCESS_KEY_ID ve AWS_SECRET_ACCESS_KEY gerekli");
+  }
 
-  const serializedPayload = JSON.stringify(inputProps);
-  // Remotion v4: inputProps must be SerializedInputProps. Inline JSON up to ~200KB.
-  const serializedInputProps = { type: "payload" as const, payload: serializedPayload };
-
-  const payload = {
-    type: "start" as const,
+  const out = await renderMediaOnLambda({
+    region: AWS_REGION as any,
+    functionName: LAMBDA_FN,
     serveUrl: SERVE_URL,
     composition,
+    inputProps,
+    codec: "h264",
+    imageFormat: "jpeg",
     framesPerLambda: 9999,
-    inputProps: serializedInputProps,
-    codec: "h264" as const,
-    imageFormat: "jpeg" as const,
-    crf: null,
-    envVariables: {} as Record<string, string>,
-    pixelFormat: null,
-    proResProfile: null,
-    x264Preset: null,
-    jpegQuality: 80,
+    privacy: "public",
     maxRetries: 1,
-    privacy: "public" as const,
-    logLevel: "info" as const,
-    frameRange: null,
-    outName: null,
-    timeoutInMilliseconds: 240000,
-    chromiumOptions: {} as Record<string, unknown>,
-    scale: 1,
-    everyNthFrame: 1,
-    numberOfGifLoops: null,
-    concurrencyPerLambda: 1,
-    downloadBehavior: { type: "play-in-browser" as const },
-    muted: false,
-    overwrite: true,
-    audioBitrate: null,
-    videoBitrate: null,
-    encodingMaxRate: null,
-    encodingBufferSize: null,
-    audioCodec: null,
-    forceHeight: null,
-    forceWidth: null,
-    rendererFunctionName: null,
-    bucketName: null,
-    forceBucketName: null,
-    metadata: null,
-    offthreadVideoCacheSizeInBytes: null,
-    versionOnLambda: "4.0.220",
-    webhook: webhookUrl ? { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null } : null,
-  };
-
-  if (Deno.env.get("AWS_ACCESS_KEY_ID") && Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
-    const out = await invokeLambda({
-      region: AWS_REGION,
-      functionName: LAMBDA_FN,
-      payload,
-      invocationType: "RequestResponse",
-    });
-    if (out.status >= 300) {
-      throw new Error(`lambda invoke ${out.status}: ${JSON.stringify(out.body).slice(0, 400)}`);
-    }
-    if (out.body?.errorType || out.body?.errorMessage) {
-      throw new Error(`lambda error: ${out.body?.errorType ?? ""} ${out.body?.errorMessage ?? ""}`.slice(0, 400));
-    }
-    return out.body?.renderId ?? out.body?.bucketName ?? "lambda";
-  }
-
-  const invokeUrl = Deno.env.get("REMOTION_LAMBDA_INVOKE_URL");
-  if (!invokeUrl) {
-    throw new Error(
-      "AWS credentials yok ve REMOTION_LAMBDA_INVOKE_URL de tanımlı değil. İkisinden birini ayarla.",
-    );
-  }
-  const res = await fetch(invokeUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    webhook: webhookUrl
+      ? { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null }
+      : undefined,
   });
-  if (!res.ok) throw new Error(`lambda url ${res.status}: ${await res.text()}`);
-  const j = await res.json();
-  return j.renderId ?? j.bucketName ?? "lambda";
+  return out.renderId;
 }
 
 function json(payload: unknown, status = 200) {
