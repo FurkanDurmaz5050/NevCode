@@ -1,0 +1,34 @@
+name: Deploy Supabase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - "scripts/deploy-supabase.sh"
+      - ".github/workflows/deploy-supabase.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: DB push
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Deploy functions
+        run: |
+          for fn in health openai-chat scrape-context deep-research research-search social-posts gemini-image render-video fx-forecast shipping-quote carbon-estimate; do
+            supabase functions deploy "$fn"
+          done
+          # Webhook + healthcheck JWT istemez
+          supabase functions deploy render-callback --no-verify-jwt
+          supabase functions deploy health --no-verify-jwt

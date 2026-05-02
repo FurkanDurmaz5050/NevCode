@@ -19,7 +19,7 @@ const PHASE_DEFS: { id: PhaseKey; label: string; icon: any }[] = [
 
 type PhaseStatus = "pending" | "running" | "done";
 
-export function StartPage({ onGoTo }: { onGoTo: (p: string) => void }) {
+export function StartPage({ onGoTo, onAnalyzed }: { onGoTo: (p: string) => void; onAnalyzed?: () => void | Promise<void> }) {
   const [form, setForm] = useState<BusinessInput>({
     website: "", instagram: "", idea: "", category: "Kozmetik",
     productName: "", unitCostTRY: 120, leadTimeDays: 7, weightKg: 1,
@@ -66,6 +66,7 @@ export function StartPage({ onGoTo }: { onGoTo: (p: string) => void }) {
         });
         if (evt.phase === "done" && evt.markets && evt.analysis_id) {
           setResult({ markets: evt.markets, analysisId: evt.analysis_id });
+          void onAnalyzed?.();
         }
       });
     } catch (e) {

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm build",
+  "installCommand": "echo 'install handled by buildCommand'",
+  "outputDirectory": "dist",
+  "devCommand": "pnpm dev",
+  "rewrites": [
+    { "source": "/auth/callback", "destination": "/" },
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
+}

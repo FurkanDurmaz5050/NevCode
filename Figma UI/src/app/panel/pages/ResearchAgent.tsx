@@ -1,65 +1,154 @@
-import { useRef, useState } from "react";
-import { Bot, Send, Loader2, Sparkles, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bot, Send, Loader2, Sparkles, AlertTriangle, Globe, ExternalLink } from "lucide-react";
 import { chatStream, RESEARCH_SYSTEM_PROMPT, type ChatMessage } from "../../lib/openai";
+import { useBusinessState } from "../../lib/business";
+import { loadLatestAnalysis, type MarketRow } from "../../lib/research";
+import { webSearch, type SearchHit } from "../../lib/research-search";
 
-const PRESETS = [
-  "Türk kozmetik markası için Almanya pazarı derin analizi yap",
-  "BAE'de el yapımı tekstil için fiyatlandırma stratejisi",
-  "Hollanda Bol.com'da gıda ürünü yasal süreci",
-  "Japonya Rakuten için lokalizasyon checklist",
+const TRIGGERS = [
+  "güncel", "trend", "bugün", "haftaki", "ayın", "2025", "2026", "son", "şu an", "yeni",
+  "rakip", "fiyat", "regülasyon", "düzenleme", "vergi", "tarife", "fee", "kampanya",
+  "haber", "news", "latest", "current", "recent", "2024",
 ];
 
+const PRESETS = [
+  "İşletmem için en iyi 3 pazarı kıyasla",
+  "Pazara giriş checklist'i hazırla",
+  "Rakip fiyatlandırması nasıl konumlanmalı?",
+  "İlk 30 günlük pazarlama planı yaz",
+];
+
+interface ChatItem {
+  role: "user" | "assistant";
+  content: string;
+  citations?: SearchHit[];
+}
+
+function shouldSearch(text: string): boolean {
+  const lower = text.toLowerCase();
+  return TRIGGERS.some((t) => lower.includes(t));
+}
+
 export function ResearchAgentPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "system", content: RESEARCH_SYSTEM_PROMPT },
-  ]);
+  const biz = useBusinessState();
+  const [markets, setMarkets] = useState<MarketRow[]>([]);
+  const [systemPrompt, setSystemPrompt] = useState(RESEARCH_SYSTEM_PROMPT);
+  const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [webEnabled, setWebEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    void (async () => {
+      const latest = await loadLatestAnalysis().catch(() => null);
+      const ms = latest?.markets ?? [];
+      setMarkets(ms);
+      const ctx = [
+        RESEARCH_SYSTEM_PROMPT,
+        biz.business
+          ? `\n=== AKTİF İŞLETME ===\nMarka: ${biz.business.name ?? "-"}\nÜrün: ${biz.business.product_name ?? "-"} (${biz.business.category ?? "-"})\nWeb: ${biz.business.website ?? "-"}\nBirim maliyet: ${biz.business.unit_cost_try ?? "-"} TRY · Tedarik: ${biz.business.lead_time_days ?? "-"} gün · Ağırlık: ${biz.business.weight_kg ?? "-"} kg`
+          : "",
+        ms.length
+          ? `\n=== SON ANALİZ — ÖNERİLEN PAZARLAR ===\n${ms.slice(0, 8).map((m) => `- ${m.flag ?? ""} ${m.country} (uyum ${m.fit_score}, marj ~%${m.avg_margin ?? "?"}, marketplaces: ${m.marketplaces.join(", ")}; rakipler: ${m.competitors.slice(0, 3).join(", ")})`).join("\n")}`
+          : "",
+        "\nKullanıcı sorularını bu bağlam ışığında, somut ve eyleme dönük cevapla. Web arama sonuçları sağlandığında bunlara başvur ve [1], [2] gibi atıf yap.",
+      ].filter(Boolean).join("");
+      setSystemPrompt(ctx);
+    })();
+  }, [biz.business?.id]);
+
   const send = async (text: string) => {
-    if (!text.trim() || streaming) return;
+    const q = text.trim();
+    if (!q || streaming) return;
     setError(null);
-    const userMsg: ChatMessage = { role: "user", content: text };
-    const newMsgs = [...messages, userMsg];
-    setMessages([...newMsgs, { role: "assistant", content: "" }]);
     setInput("");
+
+    let citations: SearchHit[] = [];
+    let webBlock = "";
+    if (webEnabled && shouldSearch(q)) {
+      setSearching(true);
+      try {
+        const cat = biz.business?.category ?? biz.business?.product_name ?? "";
+        const enriched = cat ? `${q} (context: ${cat} 2026)` : q;
+        const r = await webSearch(enriched, { max_results: 5, depth: "advanced" });
+        citations = r.results;
+        if (r.results.length) {
+          webBlock = `\n\n[WEB SEARCH RESULTS for "${enriched}"]\n${r.answer ? `Özet: ${r.answer}\n` : ""}${r.results
+            .map((h, i) => `[${i + 1}] ${h.title} — ${h.url}\n   ${h.snippet.slice(0, 280)}`)
+            .join("\n")}\n[/WEB SEARCH]`;
+        }
+      } catch (e: any) {
+        console.warn("web search failed", e?.message);
+      } finally {
+        setSearching(false);
+      }
+    }
+
+    const userItem: ChatItem = { role: "user", content: q, citations };
+    setItems((prev) => [...prev, userItem, { role: "assistant", content: "" }]);
+
+    const chatMessages: ChatMessage[] = [
+      { role: "system", content: systemPrompt + (webBlock ? `\n\n${webBlock}` : "") },
+      ...items.map((it) => ({ role: it.role, content: it.content } as ChatMessage)),
+      { role: "user", content: q },
+    ];
+
     setStreaming(true);
     try {
       let acc = "";
-      for await (const chunk of chatStream(newMsgs)) {
+      for await (const chunk of chatStream(chatMessages)) {
         acc += chunk;
-        setMessages([...newMsgs, { role: "assistant", content: acc }]);
+        setItems((prev) => {
+          const copy = prev.slice();
+          copy[copy.length - 1] = { role: "assistant", content: acc };
+          return copy;
+        });
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       }
     } catch (e: any) {
       setError(e.message || "Bilinmeyen hata");
-      setMessages(newMsgs);
+      setItems((prev) => prev.slice(0, -1));
     } finally {
       setStreaming(false);
     }
   };
 
-  const visible = messages.filter((m) => m.role !== "system");
+  const recent = markets.slice(0, 5);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl tracking-tight" style={{ fontWeight: 600 }}>AI Araştırma Ajanı</h1>
-          <p className="text-sm text-slate-500 mt-1">GPT-4o destekli derin pazar analizi & stratejik öneri.</p>
+          <p className="text-sm text-slate-500 mt-1">İşletme bağlamı + canlı web araması ile derin pazar analizi.</p>
         </div>
-        <span className="text-xs px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          Bağlı · gpt-4o-mini
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWebEnabled((v) => !v)}
+            className={`text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 border transition ${
+              webEnabled
+                ? "bg-sky-50 border-sky-200 text-sky-700"
+                : "bg-slate-50 border-slate-200 text-slate-500"
+            }`}
+            title="Tavily web araması"
+          >
+            <Globe className={`w-3.5 h-3.5 ${searching ? "animate-spin" : ""}`} />
+            Web {webEnabled ? "açık" : "kapalı"}
+          </button>
+          <span className="text-xs px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Bağlı
+          </span>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-4 gap-4">
         <div className="lg:col-span-3 rounded-2xl bg-white border border-slate-200 flex flex-col h-[640px]">
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4">
-            {visible.length === 0 ? (
+            {items.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3">
                   <Bot className="w-7 h-7 text-white" />
@@ -73,7 +162,7 @@ export function ResearchAgentPage() {
                   {PRESETS.map((p) => (
                     <button
                       key={p}
-                      onClick={() => send(p)}
+                      onClick={() => void send(p)}
                       className="text-xs px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700"
                     >
                       {p}
@@ -82,17 +171,52 @@ export function ResearchAgentPage() {
                 </div>
               </div>
             ) : (
-              visible.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
-                    m.role === "user"
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-50 border border-slate-200"
-                  }`}>
-                    {m.content || <Loader2 className="w-4 h-4 animate-spin" />}
+              items.map((m, i) => {
+                const prevCitations = i > 0 && m.role === "assistant" ? items[i - 1]?.citations : undefined;
+                return (
+                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
+                      m.role === "user"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-50 border border-slate-200"
+                    }`}>
+                      {m.role === "user" && m.citations && m.citations.length > 0 && (
+                        <div className="mb-2 pb-2 border-b border-white/20 text-[11px] text-sky-200 flex items-center gap-1.5">
+                          <Globe className="w-3 h-3" />
+                          {m.citations.length} web kaynağı arandı
+                        </div>
+                      )}
+                      {m.content || <Loader2 className="w-4 h-4 animate-spin" />}
+                      {prevCitations && prevCitations.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-200 space-y-1.5">
+                          <p className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Kaynaklar</p>
+                          {prevCitations.slice(0, 5).map((c, idx) => (
+                            <a
+                              key={c.url}
+                              href={c.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-sky-700 hover:text-sky-900 hover:underline truncate flex items-center gap-1"
+                            >
+                              <span className="text-slate-400">[{idx + 1}]</span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{c.title}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                );
+              })
+            )}
+            {searching && (
+              <div className="flex justify-start">
+                <div className="bg-sky-50 border border-sky-200 text-sky-700 text-xs px-3 py-2 rounded-full flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 animate-spin" />
+                  Web aranıyor...
                 </div>
-              ))
+              </div>
             )}
           </div>
 
@@ -111,14 +235,14 @@ export function ResearchAgentPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(input); }
               }}
               rows={1}
               placeholder="Bir pazar, ürün veya strateji sor... (Enter)"
               className="flex-1 resize-none px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 outline-none text-sm focus:border-emerald-400"
             />
             <button
-              onClick={() => send(input)}
+              onClick={() => void send(input)}
               disabled={streaming || !input.trim()}
               className="p-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
             >
@@ -132,22 +256,31 @@ export function ResearchAgentPage() {
             <Sparkles className="w-5 h-5 mb-2" />
             <p style={{ fontWeight: 600 }}>Agent yetenekleri</p>
             <ul className="text-xs mt-2 space-y-1.5 opacity-90">
-              <li>• Ülke uyum skoru</li>
-              <li>• Rakip haritası</li>
+              <li>• İşletme bağlamı injection</li>
+              <li>• Canlı web araması (Tavily)</li>
+              <li>• Ülke uyum + rakip haritası</li>
               <li>• Pazarlama açısı + CTA</li>
               <li>• Yasal/uyumluluk notu</li>
-              <li>• Lojistik & karbon önerisi</li>
             </ul>
           </div>
 
           <div className="rounded-2xl bg-white border border-slate-200 p-5">
-            <p className="text-xs text-slate-500 mb-3">Son araştırmalar</p>
+            <p className="text-xs text-slate-500 mb-3">Pazarlarınız</p>
             <div className="space-y-2">
-              {["DE — Kozmetik", "AE — Tekstil", "NL — Gıda"].map((t) => (
-                <div key={t} className="text-sm p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 cursor-pointer">
-                  {t}
-                </div>
-              ))}
+              {recent.length === 0 ? (
+                <p className="text-xs text-slate-400">Henüz analiz yok. Başla sekmesinden başlayın.</p>
+              ) : (
+                recent.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => void send(`${m.country} pazarı için derin analiz, rakip haritası ve giriş stratejisi öner.`)}
+                    className="w-full text-left text-sm p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-between"
+                  >
+                    <span>{m.flag} {m.country}</span>
+                    <span className="text-xs text-slate-500">{m.fit_score}</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>

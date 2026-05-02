@@ -8,19 +8,30 @@
     "render:hero": "remotion render src/index.ts ProductHero out/hero.mp4 --props=src/props/sample-hero.json",
     "render:spotlight": "remotion render src/index.ts MarketSpotlight out/spotlight.mp4 --props=src/props/sample-spotlight.json",
     "render:reel": "remotion render src/index.ts SocialReel out/reel.mp4 --props=src/props/sample-reel.json",
-    "lambda:deploy": "remotion lambda functions deploy && remotion lambda sites create src/index.ts --site-name=globalnest"
+    "server": "tsx src/server.ts",
+    "lambda:functions:deploy": "tsx scripts/deploy-lambda.ts functions",
+    "lambda:sites:deploy": "tsx scripts/deploy-lambda.ts site",
+    "lambda:deploy": "tsx scripts/deploy-lambda.ts all",
+    "lambda:policy": "tsx scripts/deploy-lambda.ts policy",
+    "lambda:test": "tsx scripts/deploy-lambda.ts test"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.220",
     "@remotion/cli": "4.0.220",
     "@remotion/lambda": "4.0.220",
+    "@remotion/renderer": "4.0.220",
+    "@supabase/supabase-js": "^2.45.4",
+    "express": "^4.21.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "remotion": "4.0.220"
+    "remotion": "4.0.220",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
+    "tsx": "^4.19.2",
     "typescript": "5.6.3"
   }
 }

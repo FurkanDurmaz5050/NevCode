@@ -1,13 +1,25 @@
-// Tek-kullanıcı demo: localStorage'da rastgele bir id tutuyoruz.
-// Faz 5'te Supabase Auth gelince auth.uid() ile değiştirilecek.
+// user.ts — Supabase Auth user id helper.
+// `getDemoUserId()` legacy export'u korunur; artık auth.uid() döndürür (yoksa hata).
+import { supabase } from "./supabase";
 
-const KEY = "globalnest:demoUserId";
+let cachedUserId: string | null = null;
 
+/** AuthProvider tarafından session her değiştiğinde çağrılır. */
+export function setCachedUserId(id: string | null) {
+  cachedUserId = id;
+}
+
+/** Async — kesin doğru user id (oturum yoksa null). */
+export async function getCurrentUserId(): Promise<string | null> {
+  if (cachedUserId) return cachedUserId;
+  const { data } = await supabase.auth.getUser();
+  const id = data.user?.id ?? null;
+  cachedUserId = id;
+  return id;
+}
+
+/** Sync legacy helper. Oturum yoksa exception. */
 export function getDemoUserId(): string {
-  if (typeof window === "undefined") return "ssr";
-  const existing = window.localStorage.getItem(KEY);
-  if (existing) return existing;
-  const fresh = `demo_${crypto.randomUUID()}`;
-  window.localStorage.setItem(KEY, fresh);
-  return fresh;
+  if (!cachedUserId) throw new Error("Auth required: lütfen giriş yapın.");
+  return cachedUserId;
 }

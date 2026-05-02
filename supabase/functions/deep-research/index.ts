@@ -11,6 +11,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { tavilySearch, formatResults, hasTavily } from "../_shared/tavily.ts";
+import { getAuthUser, assertBusinessOwner } from "../_shared/auth.ts";
 
 interface RunRequest {
   business_id: string;
@@ -54,7 +56,6 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.5";
 const OPENAI_FALLBACK_MODEL = "gpt-4o-mini";
-const TAVILY_API_KEY = Deno.env.get("TAVILY_API_KEY"); // opsiyonel
 
 Deno.serve(async (req) => {
   const opt = handleOptions(req);
@@ -72,7 +73,24 @@ Deno.serve(async (req) => {
     return new Response("OPENAI_API_KEY tanımlı değil", { status: 500, headers: corsHeaders });
   }
 
+  const auth = await getAuthUser(req);
+  if (!auth) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  try {
+    await assertBusinessOwner(supa, body.business_id, auth.user_id);
+  } catch (e) {
+    if (e instanceof Response) {
+      return new Response(e.body, { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -115,16 +133,40 @@ Deno.serve(async (req) => {
         send({ phase: "scrape", message: "Context çıkarıldı", progress: 35, scraped });
 
         // 3) Tavily araştırma (opsiyonel)
-        let webEvidence: string[] = [];
-        if (TAVILY_API_KEY) {
+        const webEvidence: string[] = [];
+        let evidenceCount = 0;
+        if (hasTavily()) {
           send({ phase: "research", message: "Web'de pazar/rakip taraması", progress: 45 });
           const queries = buildResearchQueries(biz, scraped);
           for (const q of queries) {
-            const hits = await tavilySearch(q);
-            webEvidence.push(`### Sorgu: ${q}\n${hits}`);
+            const { results } = await tavilySearch(q, { max_results: 5, search_depth: "basic" });
+            evidenceCount += results.length;
+            if (results.length) webEvidence.push(`### Sorgu: ${q}\n${formatResults(results)}`);
           }
+          send({ phase: "research", message: `${evidenceCount} kaynak bulundu — rakip kazısı`, progress: 55 });
+
+          // İkinci tur: ilk hızlı sentez ile rakip/marka isimleri çıkar, derin arama yap
+          try {
+            const probe = await quickProbe(biz, scraped, webEvidence);
+            const probeQueries = (probe.competitors ?? [])
+              .slice(0, 4)
+              .map((c: string) => `${c} pricing reviews international expansion`)
+              .concat(
+                (probe.markets ?? []).slice(0, 3).map((m: string) =>
+                  `${biz.category ?? biz.product_name ?? "product"} demand ${m} 2026 marketplaces`
+                ),
+              );
+            for (const q of probeQueries) {
+              const { results } = await tavilySearch(q, { max_results: 4, search_depth: "advanced" });
+              evidenceCount += results.length;
+              if (results.length) webEvidence.push(`### Derin: ${q}\n${formatResults(results)}`);
+            }
+          } catch (e) {
+            console.warn("deep probe skipped", e);
+          }
+          send({ phase: "research", message: `Toplam ${evidenceCount} web kanıtı toplandı`, progress: 62 });
         } else {
-          send({ phase: "research", message: "Tavily anahtarı yok — sadece LLM bilgisiyle devam", progress: 45 });
+          send({ phase: "research", message: "Tavily anahtarı yok — sadece LLM bilgisiyle devam", progress: 55 });
         }
 
         // 4) OpenAI sentez
@@ -193,26 +235,34 @@ function buildResearchQueries(biz: any, ctx: ScrapedContext): string[] {
   ];
 }
 
-async function tavilySearch(query: string): Promise<string> {
+// İlk kaba sentez: rakip/markları çıkartıp ikinci tur arama için kullan
+async function quickProbe(
+  biz: any,
+  scraped: ScrapedContext,
+  evidence: string[],
+): Promise<{ competitors: string[]; markets: string[] }> {
+  const sys =
+    `Extract competitor brand names and likely target country names from the data. Output STRICT JSON: {"competitors":[],"markets":[]}. Max 6 each. English names.`;
+  const user = `BUSINESS: ${biz.name ?? ""} - ${biz.product_name ?? biz.category ?? ""}\nWEB: ${scraped.website?.title ?? ""} ${scraped.website?.description ?? ""}\nKEYWORDS: ${(scraped.website?.detectedKeywords ?? []).join(", ")}\nEVIDENCE:\n${evidence.join("\n").slice(0, 4000)}`;
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: OPENAI_FALLBACK_MODEL,
+      response_format: { type: "json_object" },
+      messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+    }),
+  });
+  if (!r.ok) return { competitors: [], markets: [] };
+  const j = await r.json();
   try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: TAVILY_API_KEY,
-        query,
-        max_results: 5,
-        search_depth: "basic",
-      }),
-    });
-    if (!res.ok) return `(Tavily ${res.status})`;
-    const j = await res.json();
-    const items = (j.results ?? []) as Array<{ title: string; url: string; content: string }>;
-    return items
-      .map((r) => `- [${r.title}](${r.url})\n  ${r.content?.slice(0, 300) ?? ""}`)
-      .join("\n");
-  } catch (e) {
-    return `(Tavily err: ${e})`;
+    const parsed = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
+    return {
+      competitors: Array.isArray(parsed.competitors) ? parsed.competitors.map(String) : [],
+      markets: Array.isArray(parsed.markets) ? parsed.markets.map(String) : [],
+    };
+  } catch {
+    return { competitors: [], markets: [] };
   }
 }
 

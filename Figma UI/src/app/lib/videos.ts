@@ -1,6 +1,5 @@
 // Video render orchestration helpers.
-import { ANON_KEY, FUNCTIONS_URL, supabase } from "./supabase";
-import { getDemoUserId } from "./user";
+import { ANON_KEY, FUNCTIONS_URL, supabase, getFunctionAuthHeader } from "./supabase";
 
 export type VideoComposition = "ProductHero" | "MarketSpotlight" | "SocialReel";
 
@@ -59,7 +58,7 @@ export async function startRender(opts: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ANON_KEY}`,
+      Authorization: await getFunctionAuthHeader(),
       apikey: ANON_KEY,
     },
     body: JSON.stringify(opts),
@@ -69,20 +68,11 @@ export async function startRender(opts: {
   return j;
 }
 
-/** Demo kullanıcının tüm videolarını yükle. */
+/** Mevcut kullanıcının tüm videolarını yükler (RLS auth.uid() ile filtreler). */
 export async function loadVideos(): Promise<VideoRow[]> {
-  const ownerId = getDemoUserId();
-  // owner_id businesses'ta — join yerine 2 sorgu (RLS yok, single-user demo)
-  const { data: bizList } = await supabase
-    .from("businesses")
-    .select("id")
-    .eq("owner_id", ownerId);
-  const ids = (bizList ?? []).map((b: any) => b.id);
-  if (ids.length === 0) return [];
   const { data, error } = await supabase
     .from("videos")
     .select("*")
-    .in("business_id", ids)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`videos load: ${error.message}`);
   return (data ?? []) as VideoRow[];

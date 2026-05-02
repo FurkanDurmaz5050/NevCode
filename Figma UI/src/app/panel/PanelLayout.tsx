@@ -1,26 +1,33 @@
 import { type ReactNode } from "react";
 import {
-  Sparkles, Globe2, Film, PhoneCall, TrendingUp, Truck, Leaf, Bot, Settings,
+  Sparkles, Globe2, Film, PhoneCall, TrendingUp, Truck, Leaf, Bot, Settings, Lock, Megaphone, LayoutDashboard,
 } from "lucide-react";
 
 export type PanelPage =
-  | "start" | "research" | "markets" | "videos" | "voice" | "fx" | "logistics" | "carbon" | "settings";
+  | "start" | "overview" | "research" | "markets" | "posts" | "videos" | "voice" | "fx" | "logistics" | "carbon" | "settings";
 
-const NAV: { id: PanelPage; label: string; icon: any }[] = [
-  { id: "start", label: "Başla", icon: Sparkles },
+const NAV: { id: PanelPage; label: string; icon: any; alwaysOn?: boolean }[] = [
+  { id: "start", label: "Başla", icon: Sparkles, alwaysOn: true },
+  { id: "overview", label: "Genel Bakış", icon: LayoutDashboard, alwaysOn: true },
   { id: "research", label: "AI Ajan", icon: Bot },
   { id: "markets", label: "Pazaryerleri", icon: Globe2 },
+  { id: "posts", label: "Sosyal postlar", icon: Megaphone },
   { id: "videos", label: "Videolar", icon: Film },
   { id: "voice", label: "Sesli destek", icon: PhoneCall },
   { id: "fx", label: "Döviz & fiyat", icon: TrendingUp },
   { id: "logistics", label: "Lojistik", icon: Truck },
   { id: "carbon", label: "Karbon", icon: Leaf },
-  { id: "settings", label: "Ayarlar", icon: Settings },
+  { id: "settings", label: "Ayarlar", icon: Settings, alwaysOn: true },
 ];
 
 export function PanelLayout({
-  active, onNavigate, children,
-}: { active: PanelPage; onNavigate: (p: PanelPage) => void; children: ReactNode }) {
+  active, onNavigate, children, unlocked,
+}: {
+  active: PanelPage;
+  onNavigate: (p: PanelPage) => void;
+  children: ReactNode;
+  unlocked: boolean;
+}) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
       <aside className="w-56 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen">
@@ -32,18 +39,28 @@ export function PanelLayout({
         </div>
 
         <nav className="flex-1 p-2">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => onNavigate(n.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition mb-0.5 ${
-                active === n.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              <n.icon className="w-4 h-4" />
-              {n.label}
-            </button>
-          ))}
+          {NAV.map((n) => {
+            const locked = !unlocked && !n.alwaysOn;
+            return (
+              <button
+                key={n.id}
+                onClick={() => !locked && onNavigate(n.id)}
+                disabled={locked}
+                title={locked ? "Önce 'Başla' adımını tamamla" : ""}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition mb-0.5 ${
+                  active === n.id
+                    ? "bg-slate-900 text-white"
+                    : locked
+                      ? "text-slate-300 cursor-not-allowed"
+                      : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <n.icon className="w-4 h-4" />
+                <span className="flex-1 text-left">{n.label}</span>
+                {locked && <Lock className="w-3.5 h-3.5" />}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-3 border-t border-slate-200">

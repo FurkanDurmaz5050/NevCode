@@ -1,7 +1,6 @@
 // Pazar araştırması — businesses kaydı oluştur, deep-research SSE'i dinle.
 
-import { ANON_KEY, FUNCTIONS_URL, supabase } from "./supabase";
-import { getDemoUserId } from "./user";
+import { ANON_KEY, FUNCTIONS_URL, supabase, getFunctionAuthHeader } from "./supabase";
 import type { BusinessInput } from "./analyzer";
 
 export interface MarketRow {
@@ -37,9 +36,8 @@ export interface ResearchEvent {
 
 /** İşletme kaydını oluşturur veya günceller. */
 export async function upsertBusiness(input: BusinessInput & { weightKg?: number }) {
-  const owner_id = getDemoUserId();
+  // user_id INSERT trigger tarafından auth.uid()'den otomatik set edilir.
   const payload = {
-    owner_id,
     name: input.productName ?? null,
     website: input.website ?? null,
     instagram: input.instagram?.replace(/^@/, "") ?? null,
@@ -68,7 +66,7 @@ export async function streamDeepResearch(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ANON_KEY}`,
+      Authorization: await getFunctionAuthHeader(),
       apikey: ANON_KEY,
     },
     body: JSON.stringify({ business_id }),
@@ -114,11 +112,9 @@ export async function loadMarkets(analysis_id: string): Promise<MarketRow[]> {
 export async function loadLatestAnalysis(): Promise<
   { id: string; business_id: string; markets: MarketRow[] } | null
 > {
-  const owner_id = getDemoUserId();
   const { data: bizList } = await supabase
     .from("businesses")
     .select("id")
-    .eq("owner_id", owner_id)
     .order("created_at", { ascending: false })
     .limit(1);
   const businessId = bizList?.[0]?.id;

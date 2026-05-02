@@ -22,6 +22,13 @@ Deno.serve(async (req) => {
   const videoId = url.searchParams.get("video_id");
   if (!videoId) return json({ error: "video_id query gerekli" }, 400);
 
+  // Opsiyonel imza doğrulaması: Edge fn callback URL'e ?secret= ekliyor.
+  const expected = Deno.env.get("RENDER_CALLBACK_SECRET");
+  if (expected) {
+    const got = url.searchParams.get("secret");
+    if (got !== expected) return json({ error: "invalid secret" }, 401);
+  }
+
   let body: any = {};
   try {
     body = await req.json();
@@ -31,16 +38,23 @@ Deno.serve(async (req) => {
 
   const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // Lambda formatı
-  if (body.type === "success" && body.outputUrl) {
+  // Lambda formatı (renderMediaOnLambda webhook)
+  if (body.type === "success" && (body.outputUrl || body.outputFile)) {
     await supa
       .from("videos")
       .update({
         status: "ready",
         progress: 100,
-        url: body.outputUrl,
+        url: body.outputUrl ?? body.outputFile,
         ready_at: new Date().toISOString(),
       })
+      .eq("id", videoId);
+    return json({ ok: true });
+  }
+  if (body.type === "timeout") {
+    await supa
+      .from("videos")
+      .update({ status: "failed", error: "lambda timeout" })
       .eq("id", videoId);
     return json({ ok: true });
   }
@@ -49,7 +63,7 @@ Deno.serve(async (req) => {
       .from("videos")
       .update({
         status: "failed",
-        error: JSON.stringify(body.errors ?? body),
+        error: JSON.stringify(body.errors ?? body).slice(0, 800),
       })
       .eq("id", videoId);
     return json({ ok: true });

@@ -10,6 +10,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { invokeLambda } from "../_shared/aws-sigv4.ts";
+import { getAuthUser, assertBusinessOwner } from "../_shared/auth.ts";
 
 interface Req {
   market_id: string;
@@ -28,6 +30,7 @@ const SERVE_URL = Deno.env.get("REMOTION_SERVE_URL");
 const AWS_REGION = Deno.env.get("AWS_REGION") ?? "eu-central-1";
 const RENDER_WEBHOOK = Deno.env.get("REMOTION_RENDER_WEBHOOK");
 const RENDER_WEBHOOK_TOKEN = Deno.env.get("REMOTION_RENDER_WEBHOOK_TOKEN");
+const RENDER_CALLBACK_SECRET = Deno.env.get("RENDER_CALLBACK_SECRET") ?? "";
 const PUBLIC_FUNCTIONS_URL =
   Deno.env.get("PUBLIC_FUNCTIONS_URL") ?? `${SUPABASE_URL}/functions/v1`;
 
@@ -62,6 +65,9 @@ Deno.serve(async (req) => {
   }
   if (!body.market_id) return json({ error: "market_id zorunlu" }, 400);
 
+  const auth = await getAuthUser(req);
+  if (!auth) return json({ error: "unauthorized" }, 401);
+
   const composition = body.composition ?? "MarketSpotlight";
   const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -75,6 +81,12 @@ Deno.serve(async (req) => {
   const business = (market as any).analyses?.businesses;
   const scraped = (market as any).analyses?.scraped_context ?? {};
   if (!business) return json({ error: "business bulunamadı" }, 404);
+  try {
+    await assertBusinessOwner(supa, business.id, auth.user_id);
+  } catch (e) {
+    if (e instanceof Response) return json({ error: "forbidden" }, e.status);
+    throw e;
+  }
 
   // 2) Tam storyboard
   const lang = LANG_MAP[market.country] ?? { code: "EN", name: "İngilizce" };
@@ -92,10 +104,17 @@ Deno.serve(async (req) => {
     return json({ error: `storyboard üretimi: ${e instanceof Error ? e.message : String(e)}` }, 500);
   }
 
-  const productImageUrl =
-    body.product_image_url ||
-    scraped?.website?.ogImage ||
-    "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=1200&q=80";
+  const fallbackImage = "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=1200&q=80";
+  const candidate = body.product_image_url || scraped?.website?.ogImage || fallbackImage;
+  let productImageUrl = candidate;
+  try {
+    const head = await fetch(candidate, { method: "GET", redirect: "follow" });
+    if (!head.ok || !(head.headers.get("content-type") ?? "").startsWith("image/")) {
+      productImageUrl = fallbackImage;
+    }
+  } catch {
+    productImageUrl = fallbackImage;
+  }
 
   const props = {
     composition,
@@ -134,19 +153,23 @@ Deno.serve(async (req) => {
   if (vErr || !vid) return json({ error: `videos insert: ${vErr?.message}` }, 500);
 
   // 4) Renderer tetikle
-  const callbackUrl = `${PUBLIC_FUNCTIONS_URL}/render-callback?video_id=${vid.id}`;
+  const callbackSuffix = RENDER_CALLBACK_SECRET ? `&secret=${encodeURIComponent(RENDER_CALLBACK_SECRET)}` : "";
+  const callbackUrl = `${PUBLIC_FUNCTIONS_URL}/render-callback?video_id=${vid.id}${callbackSuffix}`;
   let renderId: string | null = null;
   let triggered = false;
   let triggerError: string | null = null;
+  let triggerMode: string = "none";
 
   if (LAMBDA_FN && SERVE_URL) {
     try {
       renderId = await triggerLambda(composition, props, callbackUrl);
       triggered = true;
+      triggerMode = "lambda";
     } catch (e) {
       triggerError = `lambda: ${e instanceof Error ? e.message : String(e)}`;
     }
-  } else if (RENDER_WEBHOOK) {
+  }
+  if (!triggered && RENDER_WEBHOOK) {
     try {
       const res = await fetch(RENDER_WEBHOOK, {
         method: "POST",
@@ -169,6 +192,7 @@ Deno.serve(async (req) => {
         const j = await res.json().catch(() => ({}));
         renderId = j.render_id ?? null;
         triggered = true;
+        triggerMode = "webhook";
       }
     } catch (e) {
       triggerError = `webhook: ${e instanceof Error ? e.message : String(e)}`;
@@ -180,7 +204,7 @@ Deno.serve(async (req) => {
       .from("videos")
       .update({ status: "rendering", render_id: renderId, progress: 5 })
       .eq("id", vid.id);
-    return json({ video_id: vid.id, render_id: renderId, composition, language: lang.code, status: "rendering" });
+    return json({ video_id: vid.id, render_id: renderId, composition, language: lang.code, status: "rendering", mode: triggerMode });
   }
 
   // Renderer yok → preview modu
@@ -334,10 +358,10 @@ async function triggerLambda(
   inputProps: Record<string, unknown>,
   webhookUrl: string,
 ): Promise<string> {
-  const invokeUrl = Deno.env.get("REMOTION_LAMBDA_INVOKE_URL");
-  if (!invokeUrl) {
-    throw new Error("REMOTION_LAMBDA_INVOKE_URL tanımla (Lambda Function URL)");
+  if (!LAMBDA_FN || !SERVE_URL) {
+    throw new Error("REMOTION_LAMBDA_FUNCTION_NAME ve REMOTION_SERVE_URL gerekli");
   }
+
   const payload = {
     type: "start",
     serveUrl: SERVE_URL,
@@ -347,14 +371,37 @@ async function triggerLambda(
     imageFormat: "jpeg",
     framesPerLambda: 80,
     region: AWS_REGION,
-    webhook: { url: webhookUrl, secret: null },
+    privacy: "public",
+    webhook: { url: webhookUrl, secret: RENDER_CALLBACK_SECRET || null },
   };
+
+  // Tercih 1: AWS Lambda Invoke API (SigV4) — sadece IAM key gerekir.
+  if (Deno.env.get("AWS_ACCESS_KEY_ID") && Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
+    const out = await invokeLambda({
+      region: AWS_REGION,
+      functionName: LAMBDA_FN,
+      payload,
+      invocationType: "RequestResponse",
+    });
+    if (out.status >= 300) {
+      throw new Error(`lambda invoke ${out.status}: ${JSON.stringify(out.body).slice(0, 200)}`);
+    }
+    return out.body?.renderId ?? out.body?.bucketName ?? "lambda";
+  }
+
+  // Tercih 2: Public Function URL (auth: NONE)
+  const invokeUrl = Deno.env.get("REMOTION_LAMBDA_INVOKE_URL");
+  if (!invokeUrl) {
+    throw new Error(
+      "AWS credentials yok ve REMOTION_LAMBDA_INVOKE_URL de tanımlı değil. İkisinden birini ayarla.",
+    );
+  }
   const res = await fetch(invokeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`lambda invoke ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`lambda url ${res.status}: ${await res.text()}`);
   const j = await res.json();
   return j.renderId ?? j.bucketName ?? "lambda";
 }
