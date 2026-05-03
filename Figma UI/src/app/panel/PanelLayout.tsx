@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import {
   Sparkles, Globe2, Film, PhoneCall, TrendingUp, Truck, Leaf, Bot, Settings, Lock, Megaphone, LayoutDashboard,
 } from "lucide-react";
+import { useAuth } from "../lib/auth";
 
 export type PanelPage =
   | "start" | "overview" | "research" | "markets" | "posts" | "videos" | "voice" | "fx" | "logistics" | "carbon" | "settings";
@@ -28,6 +29,21 @@ export function PanelLayout({
   children: ReactNode;
   unlocked: boolean;
 }) {
+  const { user } = useAuth();
+  const meta = (user?.user_metadata ?? {}) as Record<string, any>;
+  const displayName: string =
+    meta.full_name ||
+    meta.name ||
+    (user?.email ? user.email.split("@")[0] : "") ||
+    "Kullanıcı";
+  const initials = displayName
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "K";
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
       <aside className="w-56 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen">
@@ -66,10 +82,10 @@ export function PanelLayout({
         <div className="p-3 border-t border-slate-200">
           <div className="flex items-center gap-2 px-2 py-1.5">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white text-xs">
-              AY
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs truncate" style={{ fontWeight: 500 }}>Aylin Y.</p>
+              <p className="text-xs truncate" style={{ fontWeight: 500 }}>{displayName}</p>
               <p className="text-xs text-slate-500 truncate">Pro plan</p>
             </div>
           </div>
