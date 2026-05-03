@@ -1,13 +1,13 @@
 // Faz 4: FX, Shipping, Carbon edge function client'ları.
 
-import { ANON_KEY, FUNCTIONS_URL } from "./supabase";
+import { ANON_KEY, FUNCTIONS_URL, getFunctionAuthHeader } from "./supabase";
 
 async function call<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${FUNCTIONS_URL}/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ANON_KEY}`,
+      Authorization: await getFunctionAuthHeader(),
       apikey: ANON_KEY,
     },
     body: JSON.stringify(body),
