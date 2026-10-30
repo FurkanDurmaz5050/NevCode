@@ -4,6 +4,13 @@ KOBİ'lerin yurtdışı pazarlara akıllı ve otomatik açılmasını sağlayan 
 İşletmeyi tanı → uygun pazarları bul → her pazar için reklam videosu + sosyal post üret
 → FX / kargo / karbon analizi → AI ajan ile canlı destek.
 
+## Tanıtım videosu
+
+<p align="center">
+  <a href="tanitim/GlobalNest-Reel-9x16.mp4"><img src="tanitim/poster.jpg" alt="GlobalNest tanıtım videosu" width="360"></a><br>
+  <sub>Video oynamıyorsa görsele tıkla.</sub>
+</p>
+
 ```
                 ┌────────────────────────┐
                 │  Vercel — Vite + React │
